@@ -92,18 +92,31 @@ export function renderTileGrid(
   ctx.strokeStyle = 'rgba(0,0,0,0.06)'
   ctx.lineWidth = 2
   const halfS = s / 2
+
+  // Vertical lines — all solid
   ctx.beginPath()
   for (let c = 0; c <= tmCols * 2; c++) {
     const x = Math.round(offsetX + c * halfS) + 0.5
     ctx.moveTo(x, offsetY)
     ctx.lineTo(x, offsetY + tmRows * s)
   }
+  ctx.stroke()
+
+  // Horizontal lines — alternate solid and dashed
   for (let r = 0; r <= tmRows * 2; r++) {
     const y = Math.round(offsetY + r * halfS) + 0.5
+    ctx.beginPath()
+    if (r % 2 === 1) {
+      ctx.setLineDash([3, 6])
+    } else {
+      ctx.setLineDash([])
+    }
     ctx.moveTo(offsetX, y)
     ctx.lineTo(offsetX + tmCols * s, y)
+    ctx.stroke()
   }
-  ctx.stroke()
+
+  ctx.setLineDash([])
   ctx.restore()
 
 }
