@@ -312,16 +312,16 @@ function AgentCard({ agent, gatewayPort, gatewayToken, t, testResult, platformTe
                 <PlatformBadge key={i} platform={p} agentId={agent.id} gatewayPort={gatewayPort} gatewayToken={gatewayToken} t={t} testResult={pResult} />
               );
             })}
-            {/* Agent session health check result */}
+            {/* DM Session health check result */}
             {(() => {
               const aKey = `${agent.id}:agent`;
               const aResult = platformTestResults ? platformTestResults[aKey] : undefined;
               if (aResult === undefined) return null;
-              if (aResult === null) return <span className="text-xs text-[var(--text-muted)] animate-pulse">⏳ Agent...</span>;
+              if (aResult === null) return <span className="text-xs text-[var(--text-muted)] animate-pulse">⏳ DM Session...</span>;
               return (
                 <span className={`inline-flex items-center gap-1 text-xs ${aResult.ok ? "text-green-400" : "text-red-400"}`}
                   title={aResult.ok ? `${aResult.elapsed}ms${aResult.detail ? ' · ' + aResult.detail : ''}` : aResult.error || ''}>
-                  {aResult.ok ? "✅" : "❌"} Agent {aResult.ok ? `(${aResult.elapsed}ms)` : ""}
+                  {aResult.ok ? "✅" : "❌"} DM Session {aResult.ok ? `(${aResult.elapsed}ms)` : ""}
                 </span>
               );
             })()}
