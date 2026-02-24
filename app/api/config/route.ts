@@ -17,13 +17,23 @@ interface SessionStatus {
   sessionCount: number;
   todayAvgResponseMs: number;
   messageCount: number;
+  weeklyResponseMs: number[]; // 过去7天每天的平均响应时间
 }
 
 function getAgentSessionStatus(agentId: string): SessionStatus {
-  const result: SessionStatus = { lastActive: null, totalTokens: 0, contextTokens: 0, sessionCount: 0, todayAvgResponseMs: 0, messageCount: 0 };
+  const result: SessionStatus = { lastActive: null, totalTokens: 0, contextTokens: 0, sessionCount: 0, todayAvgResponseMs: 0, messageCount: 0, weeklyResponseMs: [] };
   const sessionsDir = path.join(OPENCLAW_DIR, `agents/${agentId}/sessions`);
   
   const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  
+  // 生成过去7天的日期
+  const weekDates: string[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 86400000);
+    weekDates.push(d.toISOString().slice(0, 10));
+  }
+  const dailyResponseTimes: Record<string, number[]> = {};
+  for (const d of weekDates) dailyResponseTimes[d] = [];
   
   let files: string[];
   try {
@@ -32,7 +42,6 @@ function getAgentSessionStatus(agentId: string): SessionStatus {
 
   // 使用 Set 来统计唯一的 session
   const sessionKeys = new Set<string>();
-  const todayResponseTimes: number[] = [];
 
   for (const file of files) {
     const filePath = path.join(sessionsDir, file);
@@ -70,17 +79,18 @@ function getAgentSessionStatus(agentId: string): SessionStatus {
       }
     }
     
-    // 计算今天的响应时间
+    // 计算过去7天的响应时间
     for (let i = 0; i < messages.length; i++) {
       if (messages[i].role !== "user") continue;
-      if (messages[i].ts.slice(0, 10) !== today) continue;
+      const msgDate = messages[i].ts.slice(0, 10);
+      if (!dailyResponseTimes[msgDate]) continue;
       for (let j = i + 1; j < messages.length; j++) {
         if (messages[j].role === "assistant" && messages[j].stopReason === "stop") {
           const userTs = new Date(messages[i].ts).getTime();
           const assistTs = new Date(messages[j].ts).getTime();
           const diffMs = assistTs - userTs;
           if (diffMs > 0 && diffMs < 600000) {
-            todayResponseTimes.push(diffMs);
+            dailyResponseTimes[msgDate].push(diffMs);
           }
           break;
         }
@@ -89,9 +99,15 @@ function getAgentSessionStatus(agentId: string): SessionStatus {
   }
   
   result.sessionCount = sessionKeys.size || files.length; // 降级为文件数
-  if (todayResponseTimes.length > 0) {
-    result.todayAvgResponseMs = Math.round(todayResponseTimes.reduce((a, b) => a + b, 0) / todayResponseTimes.length);
+  const todayTimes = dailyResponseTimes[today] || [];
+  if (todayTimes.length > 0) {
+    result.todayAvgResponseMs = Math.round(todayTimes.reduce((a, b) => a + b, 0) / todayTimes.length);
   }
+  result.weeklyResponseMs = weekDates.map(d => {
+    const times = dailyResponseTimes[d];
+    if (!times || times.length === 0) return 0;
+    return Math.round(times.reduce((a, b) => a + b, 0) / times.length);
+  });
   return result;
 }
 

@@ -25,6 +25,7 @@ interface Agent {
     sessionCount: number;
     todayAvgResponseMs: number;
     messageCount: number;
+    weeklyResponseMs: number[];
   };
 }
 
@@ -243,6 +244,54 @@ function ModelBadge({ model }: { model: string }) {
   );
 }
 
+// 迷你曲线图 (sparkline)
+function MiniSparkline({ data, width = 120, height = 24 }: { data: number[]; width?: number; height?: number }) {
+  const hasData = data.some(v => v > 0);
+  if (!hasData) return null;
+
+  // 判断趋势：最后一天 vs 前一天（跳过0值找最近两个有效值）
+  const validValues = data.filter(v => v > 0);
+  let trending: "up" | "down" | "flat" = "flat";
+  if (validValues.length >= 2) {
+    const last = validValues[validValues.length - 1];
+    const prev = validValues[validValues.length - 2];
+    trending = last > prev ? "up" : last < prev ? "down" : "flat";
+  }
+  const color = trending === "up" ? "#f87171" : trending === "down" ? "#4ade80" : "#f59e0b";
+
+  const max = Math.max(...data);
+  const min = Math.min(...data.filter(v => v > 0), max);
+  const range = max - min || 1;
+  const pad = 2;
+  const pts = data.map((v, i) => {
+    const x = pad + (i / (data.length - 1)) * (width - pad * 2);
+    const y = v === 0 ? height - pad : (height - pad) - ((v - min) / range) * (height - pad * 2 - 2);
+    return { x, y, v };
+  });
+  const line = pts.map(p => `${p.x},${p.y}`).join(" ");
+  const area = `${pts[0].x},${height} ${line} ${pts[pts.length - 1].x},${height}`;
+  const id = `spark-${Math.random().toString(36).slice(2, 8)}`;
+  return (
+    <span className="inline-flex items-center gap-1">
+      <svg width={width} height={height} className="inline-block align-middle" title={data.map(v => v ? formatMs(v) : '-').join(' → ')}>
+        <defs>
+          <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={0.3} />
+            <stop offset="100%" stopColor={color} stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        <polygon points={area} fill={`url(#${id})`} />
+        <polyline points={line} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+        {pts.filter(p => p.v > 0).map((p, i) => (
+          <circle key={i} cx={p.x} cy={p.y} r={2} fill={color} opacity={0.9} />
+        ))}
+      </svg>
+      {trending === "up" && <span className="text-red-400 text-xs">↗</span>}
+      {trending === "down" && <span className="text-green-400 text-xs">↘</span>}
+    </span>
+  );
+}
+
 // Agent 状态标签
 function AgentStatusBadge({ state, t }: { state?: string; t: TFunc }) {
   const config: Record<string, { dot: string; text: string; color: string; pulse?: boolean }> = {
@@ -387,6 +436,7 @@ function AgentCard({ agent, gatewayPort, gatewayToken, t, testResult, platformTe
             )}
             <div className="flex items-center justify-between text-xs mt-1">
               <span className="text-[var(--text-muted)]">{t("agent.todayAvgResponse")}</span>
+              {agent.session.weeklyResponseMs && <MiniSparkline data={agent.session.weeklyResponseMs} />}
               <span title={t("agent.todayAvgResponseTip")} className={`font-mono cursor-help ${
                 !agent.session.todayAvgResponseMs ? "text-[var(--text-muted)]"
                 : agent.session.todayAvgResponseMs > 50000 ? "text-red-400"
