@@ -28,12 +28,10 @@ export function GatewayStatus() {
     return () => clearInterval(timer);
   }, [check]);
 
-  if (!health) return null;
-
   return (
     <div className="relative inline-flex items-center gap-2">
       <a
-        href={health.ok && health.webUrl ? health.webUrl : undefined}
+        href={health?.ok && health.webUrl ? health.webUrl : undefined}
         target="_blank"
         rel="noopener noreferrer"
         className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border bg-cyan-500/20 text-cyan-300 border-cyan-500/30 hover:bg-cyan-500/30 transition-colors cursor-pointer"
@@ -41,7 +39,9 @@ export function GatewayStatus() {
         🌐 Gateway
         <span className="opacity-50 text-[10px]">↗</span>
       </a>
-      {health.ok ? (
+      {!health ? (
+        <span className="text-xs text-[var(--text-muted)]">--</span>
+      ) : health.ok ? (
         <span className="text-green-400 text-sm cursor-help" title={t("gateway.healthy")}>✅</span>
       ) : (
         <span
@@ -50,7 +50,7 @@ export function GatewayStatus() {
           onClick={() => setShowError((v) => !v)}
         >❌</span>
       )}
-      {showError && !health.ok && health.error && (
+      {showError && health && !health.ok && health.error && (
         <div className="absolute top-full left-0 mt-1 z-50 px-3 py-2 rounded-lg bg-red-500/15 border border-red-500/30 text-red-300 text-xs max-w-64 whitespace-pre-wrap shadow-lg">
           {health.error}
         </div>
