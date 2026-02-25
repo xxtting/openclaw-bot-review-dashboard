@@ -328,6 +328,7 @@ export function createDefaultLayout(): OfficeLayout {
     { uid: 'painting-s1', type: FurnitureType.PAINTING_SMALL_1, col: 1, row: 13 },
     { uid: 'painting-s2', type: FurnitureType.PAINTING_SMALL_2, col: 19, row: 13 },
     { uid: 'bookshelf-b', type: FurnitureType.BOOKSHELF, col: 17, row: 11 },
+    { uid: 'sofa-b', type: FurnitureType.SOFA, col: 14.5, row: 13.5, rotation: 180 },
     { uid: 'bench-b1', type: FurnitureType.BENCH, col: 8, row: 15 },
     { uid: 'bench-b2', type: FurnitureType.BENCH, col: 12, row: 15 },
     { uid: 'lamp-b', type: FurnitureType.LAMP, col: 7, row: 13 },
