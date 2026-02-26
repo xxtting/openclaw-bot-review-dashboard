@@ -135,6 +135,7 @@ export default function PixelOfficePage() {
   const [fullscreenPhoto, setFullscreenPhoto] = useState(false)
   const [showModelPanel, setShowModelPanel] = useState(false)
   const [showTokenRank, setShowTokenRank] = useState(false)
+  const [broadcasts, setBroadcasts] = useState<Array<{ id: number; emoji: string; text: string }>>([])
 
   const forceEditorUpdate = useCallback(() => setEditorTick(t => t + 1), [])
 
@@ -298,6 +299,18 @@ export default function PixelOfficePage() {
           const prev = prevAgentStatesRef.current.get(agent.agentId)
           if (agent.state === 'waiting' && prev && prev !== 'waiting') {
             playDoneSound()
+          }
+          // Broadcast notification on meaningful state transitions
+          if (prev && prev !== agent.state) {
+            if (agent.state === 'working' && prev !== 'working') {
+              const bid = Date.now() + Math.random()
+              setBroadcasts(b => [...b, { id: bid, emoji: agent.emoji, text: `${agent.emoji} ${agent.name} ${t('pixelOffice.broadcast.online')}` }])
+              setTimeout(() => setBroadcasts(b => b.filter(x => x.id !== bid)), 5000)
+            } else if (agent.state === 'offline' && prev === 'working') {
+              const bid = Date.now() + Math.random()
+              setBroadcasts(b => [...b, { id: bid, emoji: agent.emoji, text: `${agent.emoji} ${agent.name} ${t('pixelOffice.broadcast.offline')}` }])
+              setTimeout(() => setBroadcasts(b => b.filter(x => x.id !== bid)), 5000)
+            }
           }
         }
         const stateMap = new Map<string, string>()
@@ -897,6 +910,22 @@ export default function PixelOfficePage() {
           onMouseDown={handleMouseDown} onMouseUp={handleMouseUp}
           onContextMenu={handleContextMenu}
           className="w-full h-full" />
+
+        {/* Broadcast notifications */}
+        {broadcasts.length > 0 && (
+          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex flex-col gap-2 pointer-events-none">
+            {broadcasts.map(b => (
+              <div key={b.id} className="px-4 py-2 rounded-full bg-black/70 text-white text-sm font-medium backdrop-blur-sm shadow-lg whitespace-nowrap"
+                style={{ animation: 'broadcastIn 0.3s ease-out, broadcastOut 0.5s ease-in 4.5s forwards' }}>
+                {b.text}
+              </div>
+            ))}
+          </div>
+        )}
+        <style>{`
+          @keyframes broadcastIn { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
+          @keyframes broadcastOut { from { opacity: 1; } to { opacity: 0; transform: translateY(-8px); } }
+        `}</style>
 
         {/* Reset view button */}
         <button onClick={resetView}

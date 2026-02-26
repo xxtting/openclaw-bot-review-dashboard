@@ -220,6 +220,8 @@ const translations: Record<Locale, Record<string, string>> = {
     "pixelOffice.state.idle": "摸鱼中",
     "pixelOffice.state.offline": "下班了",
     "pixelOffice.state.waiting": "等待中",
+    "pixelOffice.broadcast.online": "上班了",
+    "pixelOffice.broadcast.offline": "下班了",
   },
   en: {
     // layout
@@ -436,6 +438,8 @@ const translations: Record<Locale, Record<string, string>> = {
     "pixelOffice.state.idle": "Idle",
     "pixelOffice.state.offline": "Offline",
     "pixelOffice.state.waiting": "Waiting",
+    "pixelOffice.broadcast.online": "is online",
+    "pixelOffice.broadcast.offline": "is offline",
   },
 };
 
