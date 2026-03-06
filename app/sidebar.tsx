@@ -41,6 +41,7 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileAgentCount, setMobileAgentCount] = useState<number | null>(null);
+  const [mobileOpenclawVersion, setMobileOpenclawVersion] = useState<string | null>(null);
   const [experimentOpen, setExperimentOpen] = useState(false);
   const [bugsEnabled, setBugsEnabled] = useState(false);
   const [bugsCount, setBugsCount] = useState(5);
@@ -232,6 +233,24 @@ export function Sidebar() {
     };
   }, [pathname]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const fetchOpenclawVersion = async () => {
+      try {
+        const res = await fetch("/api/gateway-health", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+        const version = typeof data?.openclawVersion === "string" ? data.openclawVersion.trim() : "";
+        setMobileOpenclawVersion(version || null);
+      } catch {}
+    };
+    void fetchOpenclawVersion();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <>
       <div className="md:hidden">
@@ -266,7 +285,9 @@ export function Sidebar() {
                 🦞
               </span>
               <div className="min-w-0">
-                <div className="text-xs font-bold tracking-wide truncate">OPENCLAW</div>
+                <div className="text-xs font-bold tracking-wide truncate">
+                  OPENCLAW{mobileOpenclawVersion ? ` ${mobileOpenclawVersion}` : ""}
+                </div>
                 <div className="text-[10px] text-[var(--text-muted)] truncate">
                   {pathname === "/" && mobileAgentCount !== null
                     ? `${mobileAgentCount} ${t("home.agentCount")}`
