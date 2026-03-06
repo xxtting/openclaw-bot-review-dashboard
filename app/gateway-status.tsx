@@ -17,6 +17,7 @@ interface HealthResult {
   error?: string;
   data?: any;
   webUrl?: string;
+  openclawVersion?: string;
 }
 
 interface GatewayStatusProps {
@@ -29,6 +30,7 @@ export function GatewayStatus({ compact = false, className = "", hideIconOnMobil
   const { t } = useI18n();
   const [health, setHealth] = useState<HealthResult | null>(null);
   const [showError, setShowError] = useState(false);
+  const [showVersionTip, setShowVersionTip] = useState(false);
 
   const check = useCallback(() => {
     fetch("/api/gateway-health")
@@ -43,12 +45,21 @@ export function GatewayStatus({ compact = false, className = "", hideIconOnMobil
     return () => clearInterval(timer);
   }, [check]);
 
+  const gatewayTitle = health?.openclawVersion
+    ? `OpenClaw ${health.openclawVersion}`
+    : "OpenClaw";
+
   return (
     <div className={`relative inline-flex items-center gap-1.5 ${className}`.trim()}>
       <a
         href={health?.ok && health.webUrl ? resolveGatewayUrl(health.webUrl) : undefined}
         target="_blank"
         rel="noopener noreferrer"
+        title={gatewayTitle}
+        onMouseEnter={() => setShowVersionTip(true)}
+        onMouseLeave={() => setShowVersionTip(false)}
+        onFocus={() => setShowVersionTip(true)}
+        onBlur={() => setShowVersionTip(false)}
         className={`inline-flex items-center rounded-full font-medium border hover:bg-cyan-500/30 transition-colors cursor-pointer ${
           compact ? "px-2 py-1 text-[10px]" : "px-2 py-0.5 text-xs"
         } ${
@@ -65,6 +76,11 @@ export function GatewayStatus({ compact = false, className = "", hideIconOnMobil
         ) : "🦞 Gateway"}
         <span className="opacity-50 text-[10px]">↗</span>
       </a>
+      {showVersionTip && (
+        <div className="absolute top-full left-0 mt-1 z-50 px-2 py-1 rounded-md bg-black/80 border border-white/10 text-white text-[10px] whitespace-nowrap shadow-lg pointer-events-none">
+          {gatewayTitle}
+        </div>
+      )}
       {!health ? (
         <span className={compact ? "text-[10px] text-[var(--text-muted)]" : "text-xs text-[var(--text-muted)]"}>--</span>
       ) : health.ok ? (

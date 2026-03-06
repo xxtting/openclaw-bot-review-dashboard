@@ -8,6 +8,7 @@ const OPENCLAW_HOME = process.env.OPENCLAW_HOME || path.join(process.env.HOME ||
 const CONFIG_PATH = path.join(OPENCLAW_HOME, "openclaw.json");
 const DEGRADED_LATENCY_MS = 1500;
 const execFileAsync = promisify(execFile);
+let cachedOpenclawVersion: { value: string | null; expiresAt: number } | null = null;
 
 function parseJsonFromMixedOutput(output: string): any {
   for (let i = 0; i < output.length; i++) {
@@ -65,9 +66,29 @@ async function probeGatewayViaCli(token: string, timeoutMs = 5000): Promise<{ ok
   }
 }
 
+async function getOpenclawVersion(): Promise<string | undefined> {
+  const now = Date.now();
+  if (cachedOpenclawVersion && cachedOpenclawVersion.expiresAt > now) {
+    return cachedOpenclawVersion.value || undefined;
+  }
+  try {
+    const { stdout } = await execFileAsync("openclaw", ["--version"], {
+      maxBuffer: 1024 * 1024,
+      env: { ...process.env, FORCE_COLOR: "0" },
+    });
+    const version = stdout.trim().split(/\s+/)[0] || null;
+    cachedOpenclawVersion = { value: version, expiresAt: now + 60 * 60 * 1000 };
+    return version || undefined;
+  } catch {
+    cachedOpenclawVersion = { value: null, expiresAt: now + 60 * 1000 };
+    return undefined;
+  }
+}
+
 export async function GET() {
   const startedAt = Date.now();
   try {
+    const openclawVersion = await getOpenclawVersion();
     const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
     const config = JSON.parse(raw);
     const port = config.gateway?.port || 18789;
@@ -89,6 +110,7 @@ export async function GET() {
       return NextResponse.json({
         ok: true,
         data,
+        openclawVersion,
         status: responseMs > DEGRADED_LATENCY_MS ? "degraded" : "healthy",
         checkedAt,
         responseMs,
@@ -104,6 +126,7 @@ export async function GET() {
       return NextResponse.json({
         ok: true,
         data: null,
+        openclawVersion,
         status: "healthy",
         checkedAt,
         responseMs,
@@ -113,12 +136,14 @@ export async function GET() {
 
     return NextResponse.json({
       ok: false,
+      openclawVersion,
       error: cli.error || `HTTP ${resp.status}`,
       status: "down",
       checkedAt,
       responseMs,
     });
   } catch (err: any) {
+    const openclawVersion = await getOpenclawVersion();
     // If HTTP probe fails due transport/runtime issues, attempt CLI probe before declaring down.
     const raw = err.cause?.code === "ECONNREFUSED"
       ? "Gateway 未运行"
@@ -150,6 +175,7 @@ export async function GET() {
       return NextResponse.json({
         ok: true,
         data: null,
+        openclawVersion,
         status: "healthy",
         checkedAt,
         responseMs,
@@ -158,6 +184,7 @@ export async function GET() {
     }
     return NextResponse.json({
       ok: false,
+      openclawVersion,
       error: cli.error || raw,
       status: "down",
       checkedAt,
