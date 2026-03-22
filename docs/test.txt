@@ -1,0 +1,25 @@
+五大简易测评标准，对标原生openclaw：
+1.能否自由配置大模型（30分）
+2.能否自由配置多种im，同一种im工具能否配置多个机器人（30分）
+3.多agent（20分）
+4.通用技能（20分）
+5.业务场景技能（区别与原生openclaw，加分项，10分）
+
+PS个人主观评测，不代表真实情况，仅供参考
+我是OpenClaw可视化运维开源项目OpenClaw-bot-review的作者，欢迎提交issue和pr
+
+据说 填表可以 领 MiniMax 30$ 的 Token @所有人
+https://vrfi1sk8a0.feishu.cn/share/base/form/shrcndGDz9YAOoe3xkQyrx75bdc
+
+免费模型：
+https://openrouter.ai/
+
+中转站聚合平台：
+https://relaypulse.top/
+
+测评结果：
+https://my.feishu.cn/wiki/HlruwwdCriwb83k6sDbccLaenld?sheet=itHLaR
+
+https://my.feishu.cn/wiki/HlruwwdCriwb83k6sDbccLaenld
+
+https://my.feishu.cn/wiki/HlruwwdCriwb83k6sDbccLaenld?from=from_copylink

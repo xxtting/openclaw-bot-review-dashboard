@@ -394,7 +394,7 @@ export default function Home() {
     const pending: Record<string, any> = {};
     if (data) for (const a of data.agents) pending[a.id] = null;
     setTestResults(pending);
-    callTestApi("/api/test-agents")
+    callTestApi("/api/test-bound-models")
       .then((resp) => {
         if (resp.results) {
           const map: Record<string, { ok: boolean; text?: string; error?: string; elapsed: number }> = {};
