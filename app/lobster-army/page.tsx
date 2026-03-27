@@ -54,6 +54,17 @@ interface ProjectStats {
   doneTasks: number;
 }
 
+interface DispatchTask {
+  id: string;
+  taskId: string;
+  title: string;
+  legionId: string;
+  legionName: string;
+  priority: string;
+  status: string;
+  createdAt: string;
+}
+
 const STATUS_COLORS = {
   online: "#4ade80",
   busy: "#fbbf24",
@@ -269,6 +280,10 @@ export default function LobsterArmyPage() {
   const [workflowLegion, setWorkflowLegion] = useState<Legion | null>(null);
   const [executingTask, setExecutingTask] = useState<Task | null>(null);
   const [taskLogs, setTaskLogs] = useState<Record<string, any>>({});
+  const [dispatchTasks, setDispatchTasks] = useState<DispatchTask[]>([]);
+  const [showDispatchPanel, setShowDispatchPanel] = useState(true);
+  const [testNotificationAgentId, setTestNotificationAgentId] = useState("");
+  const [notificationMessage, setNotificationMessage] = useState("📋 测试通知：这是一个测试消息");
   const [stats, setStats] = useState<ProjectStats>({
     projectName: "龙虾军团V1.0",
     progress: 0,
@@ -280,15 +295,18 @@ export default function LobsterArmyPage() {
 
   const loadData = useCallback(async () => {
     try {
-      const [dataRes, tasksRes] = await Promise.all([
+      const [dataRes, tasksRes, dispatchRes] = await Promise.all([
         fetch("/lobster-army/api/data"),
         fetch("/lobster-army/api/task"),
+        fetch("/api/agent/dispatch"),
       ]);
       const data = await dataRes.json();
       const tasksData = await tasksRes.json();
+      const dispatchData = await dispatchRes.json();
       setLegions(data.legions || []);
       setAgents(data.agents || []);
       setTasks(tasksData.tasks || []);
+      setDispatchTasks(dispatchData.tasks || []);
 
       const totalTasks = tasksData.tasks?.length || 0;
       const doneTasks = tasksData.tasks?.filter((t: Task) => t.status === "done").length || 0;
@@ -567,6 +585,38 @@ export default function LobsterArmyPage() {
     }
   };
 
+  // 发送测试通知
+  const sendTestNotification = async (agentId: string, message: string) => {
+    if (!agentId) {
+      alert("请选择Agent");
+      return;
+    }
+    try {
+      const res = await fetch("/api/agent/inbox", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agentId: agentId,
+          taskId: `test-${Date.now()}`,
+          title: "🧪 测试通知",
+          legionId: "",
+          legionName: "测试",
+          priority: "P2",
+          message: message
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert("✅ 测试通知已发送！");
+      } else {
+        alert(data.error || "发送失败");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("发送失败");
+    }
+  };
+
   const filteredTasks = tasks.filter((t) => taskFilter === "all" || t.status === taskFilter);
 
   if (loading) {
@@ -712,6 +762,91 @@ export default function LobsterArmyPage() {
           </div>
         </div>
       )}
+
+      {/* 待发任务面板 */}
+      {showDispatchPanel && dispatchTasks.length > 0 && (
+        <div className="mb-6 rounded-xl border border-[var(--accent)] bg-[var(--card)] overflow-hidden">
+          <div className="px-4 py-3 border-b border-[var(--accent)]/30 bg-[var(--accent)]/10 flex items-center justify-between">
+            <h3 className="font-bold text-sm flex items-center gap-2">
+              📬 待发任务 <span className="px-2 py-0.5 rounded bg-[var(--accent)]/20 text-[var(--accent)] text-xs">{dispatchTasks.length}</span>
+            </h3>
+            <button
+              onClick={() => setShowDispatchPanel(false)}
+              className="text-[var(--text-muted)] text-xs hover:text-[var(--text)] cursor-pointer"
+            >
+              收起 ×
+            </button>
+          </div>
+          <div className="p-4">
+            <div className="space-y-2">
+              {dispatchTasks.map((task) => (
+                <div key={task.id} className="flex items-center gap-3 p-3 rounded-lg border border-[var(--border)] bg-[var(--bg)]">
+                  <span className={`font-bold text-xs ${
+                    task.priority === "P0" ? "text-red-400" :
+                    task.priority === "P1" ? "text-orange-400" : "text-slate-400"
+                  }`}>
+                    {task.priority}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{task.title}</p>
+                    <p className="text-xs text-[var(--text-muted)] truncate">{task.legionName}</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      fetch("/api/agent/dispatch", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          taskId: task.taskId,
+                          priority: task.priority,
+                          message: task.message || task.title
+                        })
+                      }).then(res => res.json()).then(() => loadData());
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-[var(--accent)]/20 text-[var(--accent)] text-xs font-bold hover:bg-[var(--accent)]/30 transition cursor-pointer"
+                  >
+                    🚀 发送
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 测试通知面板 */}
+      <div className="mb-6 rounded-xl border border-dashed border-[var(--border)] bg-[var(--card)] overflow-hidden">
+        <div className="px-4 py-3 border-b border-[var(--border)] bg-[var(--bg)] flex items-center justify-between">
+          <h3 className="font-bold text-sm">🧪 Agent通知测试</h3>
+          <p className="text-xs text-[var(--text-muted)]">向指定Agent发送测试通知</p>
+        </div>
+        <div className="p-4">
+          <div className="flex gap-3 items-start">
+            <select
+              value={testNotificationAgentId}
+              onChange={(e) => setTestNotificationAgentId(e.target.value)}
+              className="flex-1 px-3 py-2 rounded border border-[var(--border)] bg-[var(--bg)] text-sm"
+            >
+              <option value="">选择要测试的Agent...</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>{a.emoji} {a.name} ({a.role})</option>
+              ))}
+            </select>
+            <input
+              value={notificationMessage}
+              onChange={(e) => setNotificationMessage(e.target.value)}
+              className="flex-2 px-3 py-2 rounded border border-[var(--border)] bg-[var(--bg)] text-sm"
+              placeholder="测试消息内容..."
+            />
+            <button
+              onClick={() => sendTestNotification(testNotificationAgentId, notificationMessage)}
+              className="px-4 py-2 rounded-lg bg-[var(--accent)]/20 text-[var(--accent)] text-sm font-bold hover:bg-[var(--accent)]/30 transition cursor-pointer whitespace-nowrap"
+            >
+              📤 发送测试通知
+            </button>
+          </div>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* 军团面板 */}
@@ -1338,6 +1473,8 @@ function TaskExecuteModal({
   onFail: (task: Task, notes: string) => void;
 }) {
   const [notes, setNotes] = useState("");
+  const [notificationSent, setNotificationSent] = useState(false);
+  const [agentId, setAgentId] = useState<string>("");
 
   const defaultSteps = [
     { id: "step-1", name: "执行", type: "execute" },
@@ -1361,6 +1498,52 @@ function TaskExecuteModal({
       onFail(task, notes.trim());
     } else {
       alert("请输入失败原因");
+    }
+  };
+
+  const notifyAgent = async () => {
+    const targetAgentId = agentId || task.assigneeId || legion?.leaderId;
+    if (!targetAgentId) {
+      alert("请先选择或指定Agent");
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/agent/inbox", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          agentId: targetAgentId,
+          taskId: task.id,
+          title: task.title,
+          legionId: task.legionId,
+          legionName: legion?.name || "",
+          priority: task.priority,
+          message: `🦞 龙虾军团任务通知：${task.title}`
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setNotificationSent(true);
+        // 同时记录分发
+        await fetch("/api/agent/dispatch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            agentId: targetAgentId,
+            message: `📋 任务通知：${task.title}`,
+            taskId: task.id,
+            action: "notify"
+          }),
+        });
+        alert("✅ 已通知Agent: " + targetAgentId);
+      } else {
+        alert(data.error || "通知失败");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("通知失败");
     }
   };
 
@@ -1442,6 +1625,48 @@ function TaskExecuteModal({
                 </div>
               );
             })}
+          </div>
+        </div>
+
+        {/* Agent通知 */}
+        <div className="mb-4">
+          <p className="text-sm font-bold mb-2">📬 Agent通知</p>
+          <div className="p-3 rounded-lg border border-[var(--border)] bg-[var(--bg)]">
+            <div className="flex gap-2 mb-2">
+              <select
+                value={agentId || task.assigneeId || ""}
+                onChange={(e) => setAgentId(e.target.value)}
+                className="flex-1 px-3 py-2 rounded border border-[var(--border)] bg-[var(--card)] text-sm"
+              >
+                <option value="">选择Agent...</option>
+                {legion && [
+                  legion.leaderId && (
+                    <option key={legion.leaderId} value={legion.leaderId}>
+                      👑 {legion.leaderId} (负责人)
+                    </option>
+                  ),
+                  ...legion.memberIds.map(id => (
+                    <option key={id} value={id}>{id}</option>
+                  ))
+                ].filter(Boolean)}
+              </select>
+              <button
+                onClick={notifyAgent}
+                disabled={notificationSent}
+                className={`px-4 py-2 rounded-lg text-white text-sm font-bold hover:opacity-90 cursor-pointer ${
+                  notificationSent
+                    ? "bg-green-600 cursor-not-allowed"
+                    : "bg-blue-500"
+                }`}
+              >
+                {notificationSent ? "✅ 已通知" : "📤 通知Agent"}
+              </button>
+            </div>
+            {notificationSent && (
+              <p className="text-xs text-green-400">
+                ✓ 任务通知已发送到Agent收件箱
+              </p>
+            )}
           </div>
         </div>
 
