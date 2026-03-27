@@ -32,10 +32,17 @@ interface Task {
   id: string;
   legionId: string;
   title: string;
+  description?: string;
+  assigneeId?: string;
   assigneeName?: string;
   status: "pending" | "in_progress" | "review" | "archived" | "done";
   priority: "P0" | "P1" | "P2";
   createdAt: string;
+  currentStep?: number;
+  workflowSteps?: { id: string; name: string; type: string; assigneeId?: string }[];
+  executionLog?: { stepId: string; stepName: string; stepType: string; executedAt: string; result: string; notes?: string }[];
+  startedAt?: string;
+  completedAt?: string;
 }
 
 interface ProjectStats {
@@ -260,6 +267,8 @@ export default function LobsterArmyPage() {
   const [taskFilter, setTaskFilter] = useState<"all" | "pending" | "in_progress" | "review" | "done">("all");
   const [showAllAgents, setShowAllAgents] = useState(false);
   const [workflowLegion, setWorkflowLegion] = useState<Legion | null>(null);
+  const [executingTask, setExecutingTask] = useState<Task | null>(null);
+  const [taskLogs, setTaskLogs] = useState<Record<string, any>>({});
   const [stats, setStats] = useState<ProjectStats>({
     projectName: "龙虾军团V1.0",
     progress: 0,
@@ -412,6 +421,150 @@ export default function LobsterArmyPage() {
     });
     setShowAddTask(false);
     loadData();
+  };
+
+  // 执行任务
+  const executeTask = async (task: Task, stepIndex?: number) => {
+    try {
+      const res = await fetch("/lobster-army/api/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          taskId: task.id,
+          stepIndex,
+          action: stepIndex !== undefined ? "execute" : "next"
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setExecutingTask(null);
+        loadData();
+      } else {
+        alert(data.error || "执行失败");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("执行失败");
+    }
+  };
+
+  // 开始任务
+  const startTask = async (task: Task) => {
+    try {
+      // 1. 更新任务状态为进行中
+      const res = await fetch("/lobster-army/api/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          taskId: task.id,
+          action: "start"
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setExecutingTask(null);
+        
+        // 2. 获取军团信息，找到任务的负责人/agent
+        const legion = legions.find((l) => l.id === task.legionId);
+        const agentId = task.assigneeId || legion?.leaderId;
+        
+        if (agentId) {
+          // 3. 添加任务到Agent收件箱
+          try {
+            const inboxRes = await fetch("/api/agent/inbox", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                agentId: agentId,
+                taskId: task.id,
+                title: task.title,
+                legionId: task.legionId,
+                legionName: legion?.name || "",
+                priority: task.priority,
+                message: `🦞 龙虾军团新任务：请开始执行「${task.title}」`
+              }),
+            });
+            const inboxData = await inboxRes.json();
+            console.log("任务已添加到Agent收件箱:", inboxData);
+          } catch (e) {
+            console.error("添加任务到收件箱失败:", e);
+          }
+          
+          // 4. 同时记录分发日志
+          try {
+            await fetch("/api/agent/dispatch", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                agentId: agentId,
+                message: `📋 新任务：${task.title}`,
+                taskId: task.id,
+                action: "start"
+              }),
+            });
+          } catch (e) {
+            console.error("分发记录失败:", e);
+          }
+        }
+        
+        loadData();
+        alert(`✅ 任务已开始！已通知: ${agentId || '未知Agent'}`);
+      } else {
+        alert(data.error || "启动失败");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("启动失败");
+    }
+  };
+
+  // 完成任务
+  const completeTask = async (task: Task) => {
+    try {
+      const res = await fetch("/lobster-army/api/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          taskId: task.id,
+          action: "complete"
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setExecutingTask(null);
+        loadData();
+      } else {
+        alert(data.error || "完成失败");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("完成失败");
+    }
+  };
+
+  // 标记失败
+  const failTask = async (task: Task, notes: string) => {
+    try {
+      const res = await fetch("/lobster-army/api/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          taskId: task.id,
+          action: "fail",
+          notes
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setExecutingTask(null);
+        loadData();
+      } else {
+        alert(data.error || "操作失败");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("操作失败");
+    }
   };
 
   const filteredTasks = tasks.filter((t) => taskFilter === "all" || t.status === taskFilter);
@@ -624,8 +777,15 @@ export default function LobsterArmyPage() {
               {filteredTasks.map((task) => {
                 const legion = legions.find((l) => l.id === task.legionId);
                 const priorityColor = task.priority === "P0" ? "#ef4444" : task.priority === "P1" ? "#f97316" : "#64748b";
+                const workflowSteps = legion?.workflowSteps || [
+                  { id: "step-1", name: "执行", type: "execute" },
+                  { id: "step-2", name: "审核", type: "review" },
+                  { id: "step-3", name: "存档", type: "archive" },
+                ];
+                const currentStep = task.currentStep ?? 0;
+                const canExecute = task.status !== "done" && task.status !== "archived";
                 return (
-                  <div key={task.id} className="p-3 rounded-lg border border-[var(--border)] bg-[var(--bg)] hover:border-[var(--accent)]/50 transition cursor-pointer">
+                  <div key={task.id} className="p-3 rounded-lg border border-[var(--border)] bg-[var(--bg)] hover:border-[var(--accent)]/50 transition">
                     <div className="flex items-start gap-2 mb-1">
                       <span className="font-bold text-xs shrink-0" style={{ color: priorityColor }}>{task.priority}</span>
                       <span className="text-sm font-medium flex-1">{task.title}</span>
@@ -634,7 +794,7 @@ export default function LobsterArmyPage() {
                       {legion && <span>{legion.emoji} {legion.name}</span>}
                       {task.assigneeName && <span>→ {task.assigneeName}</span>}
                     </div>
-                    <div className="flex items-center gap-2 mt-1">
+                    <div className="flex items-center gap-2 mt-2 flex-wrap">
                       <span className={`text-[10px] px-1.5 py-0.5 rounded ${
                         task.status === "done" ? "bg-green-500/20 text-green-400" :
                         task.status === "in_progress" ? "bg-yellow-500/20 text-yellow-400" :
@@ -645,6 +805,35 @@ export default function LobsterArmyPage() {
                          task.status === "in_progress" ? "🔄 进行中" :
                          task.status === "review" ? "👀 待审核" : "⏳ 待办"}
                       </span>
+                      {task.status !== "done" && task.status !== "archived" && (
+                        <button
+                          onClick={() => setExecutingTask(task)}
+                          className="text-[10px] px-2 py-0.5 rounded bg-[var(--accent)]/20 text-[var(--accent)] hover:bg-[var(--accent)]/30 transition cursor-pointer font-medium"
+                        >
+                          ⚡ 执行
+                        </button>
+                      )}
+                      {task.status === "pending" && (
+                        <button
+                          onClick={() => startTask(task)}
+                          className="text-[10px] px-2 py-0.5 rounded bg-green-500/20 text-green-400 hover:bg-green-500/30 transition cursor-pointer font-medium"
+                        >
+                          🚀 开始
+                        </button>
+                      )}
+                      {task.status !== "done" && task.status !== "archived" && (
+                        <button
+                          onClick={() => completeTask(task)}
+                          className="text-[10px] px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition cursor-pointer font-medium"
+                        >
+                          ✅ 完成
+                        </button>
+                      )}
+                      {currentStep >= 0 && currentStep < workflowSteps.length && task.status === "in_progress" && (
+                        <span className="text-[10px] text-[var(--text-muted)]">
+                          步骤 {currentStep + 1}/{workflowSteps.length}
+                        </span>
+                      )}
                     </div>
                   </div>
                 );
@@ -750,6 +939,18 @@ export default function LobsterArmyPage() {
           agents={agents}
           onClose={() => setWorkflowLegion(null)}
           onSave={(steps) => saveLegionWorkflow(workflowLegion.id, steps)}
+        />
+      )}
+
+      {/* 任务执行弹窗 */}
+      {executingTask && (
+        <TaskExecuteModal
+          task={executingTask}
+          legion={legions.find((l) => l.id === executingTask.legionId)}
+          onClose={() => setExecutingTask(null)}
+          onExecute={(task, stepIndex) => executeTask(task, stepIndex)}
+          onComplete={(task) => completeTask(task)}
+          onFail={(task, notes) => failTask(task, notes)}
         />
       )}
     </main>
@@ -1113,6 +1314,185 @@ function LegionWorkflowModal({
             className="flex-1 px-4 py-2 rounded-lg border border-[var(--border)] font-bold text-sm"
           >
             取消
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 任务执行弹窗
+function TaskExecuteModal({
+  task,
+  legion,
+  onClose,
+  onExecute,
+  onComplete,
+  onFail,
+}: {
+  task: Task;
+  legion?: Legion;
+  onClose: () => void;
+  onExecute: (task: Task, stepIndex?: number) => void;
+  onComplete: (task: Task) => void;
+  onFail: (task: Task, notes: string) => void;
+}) {
+  const [notes, setNotes] = useState("");
+
+  const defaultSteps = [
+    { id: "step-1", name: "执行", type: "execute" },
+    { id: "step-2", name: "审核", type: "review" },
+    { id: "step-3", name: "存档", type: "archive" },
+  ];
+
+  const workflowSteps = legion?.workflowSteps || defaultSteps;
+  const currentStep = task.currentStep ?? 0;
+
+  const STEP_ICONS: Record<string, string> = {
+    execute: "⚡",
+    review: "👀",
+    test: "🧪",
+    deploy: "🚀",
+    archive: "📦",
+  };
+
+  const handleFail = () => {
+    if (notes.trim()) {
+      onFail(task, notes.trim());
+    } else {
+      alert("请输入失败原因");
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div
+        className="w-full max-w-md bg-[var(--card)] border-2 border-[var(--border)] rounded-xl p-6 max-h-[85vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-bold text-lg flex items-center gap-2">
+              ⚡ 任务执行
+            </h3>
+            <p className="text-sm text-[var(--accent)] mt-1">{task.title}</p>
+          </div>
+          <button onClick={onClose} className="text-2xl text-[var(--text-muted)] hover:text-[var(--text)] cursor-pointer">
+            ×
+          </button>
+        </div>
+
+        {/* Task Info */}
+        <div className="mb-4 p-3 rounded-lg border border-[var(--border)] bg-[var(--bg)]">
+          <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] mb-2">
+            {legion && <span>{legion.emoji} {legion.name}</span>}
+            <span className={`px-2 py-0.5 rounded ${
+              task.status === "done" ? "bg-green-500/20 text-green-400" :
+              task.status === "in_progress" ? "bg-yellow-500/20 text-yellow-400" :
+              task.status === "review" ? "bg-blue-500/20 text-blue-400" :
+              "bg-slate-500/20 text-slate-400"
+            }`}>
+              {task.status === "done" ? "✅ 完成" :
+               task.status === "in_progress" ? "🔄 进行中" :
+               task.status === "review" ? "👀 待审核" : "⏳ 待办"}
+            </span>
+            <span className="ml-auto">优先级: <strong>{task.priority}</strong></span>
+          </div>
+        </div>
+
+        {/* Workflow Steps */}
+        <div className="mb-4">
+          <p className="text-sm font-bold mb-2">📋 工作流步骤</p>
+          <div className="space-y-2 max-h-[200px] overflow-y-auto">
+            {workflowSteps.map((step: any, idx: number) => {
+              const isCompleted = idx < currentStep;
+              const isCurrent = idx === currentStep;
+              const isPending = idx > currentStep;
+
+              return (
+                <div
+                  key={step.id}
+                  className={`flex items-center gap-3 p-3 rounded-lg border transition ${
+                    isCompleted ? "border-green-500/30 bg-green-500/10" :
+                    isCurrent ? "border-[var(--accent)] bg-[var(--accent)]/10" :
+                    "border-[var(--border)] bg-[var(--bg)]"
+                  }`}
+                >
+                  <span className="text-lg">
+                    {isCompleted ? "✅" : isCurrent ? STEP_ICONS[step.type] || "⚡" : "⏳"}
+                  </span>
+                  <div className="flex-1">
+                    <p className={`text-sm font-medium ${isPending ? "text-[var(--text-muted)]" : ""}`}>
+                      {idx + 1}. {step.name}
+                    </p>
+                    <p className="text-xs text-[var(--text-muted)]">
+                      {STEP_ICONS[step.type] || "⚡"} {step.type}
+                      {step.assigneeId && " · 已分配"}
+                    </p>
+                  </div>
+                  {isCurrent && (
+                    <button
+                      onClick={() => onExecute(task, idx)}
+                      className="px-3 py-1.5 rounded-lg bg-[var(--accent)] text-[var(--bg)] text-xs font-bold hover:opacity-90 cursor-pointer"
+                    >
+                      执行
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="mb-4">
+          <p className="text-sm font-bold mb-2">🚀 快捷操作</p>
+          <div className="flex gap-2 flex-wrap">
+            {task.status === "pending" && (
+              <button
+                onClick={() => onExecute(task)}
+                className="px-4 py-2 rounded-lg bg-green-500 text-white text-sm font-bold hover:opacity-90 cursor-pointer"
+              >
+                🚀 开始任务
+              </button>
+            )}
+            {task.status !== "done" && task.status !== "archived" && (
+              <button
+                onClick={() => onComplete(task)}
+                className="px-4 py-2 rounded-lg bg-purple-500 text-white text-sm font-bold hover:opacity-90 cursor-pointer"
+              >
+                ✅ 完成全部
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Fail Section */}
+        <div className="mt-auto pt-4 border-t border-[var(--border)]">
+          <p className="text-xs text-[var(--text-muted)] mb-2">标记失败原因：</p>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            className="w-full px-3 py-2 rounded border border-[var(--border)] bg-[var(--bg)] text-sm resize-none"
+            rows={2}
+            placeholder="输入失败原因..."
+          />
+          <button
+            onClick={handleFail}
+            className="mt-2 w-full px-4 py-2 rounded-lg border border-red-500/50 text-red-400 text-sm font-bold hover:bg-red-500/10 transition cursor-pointer"
+          >
+            ❌ 标记失败
+          </button>
+        </div>
+
+        {/* Close Button */}
+        <div className="mt-4">
+          <button
+            onClick={onClose}
+            className="w-full px-4 py-2 rounded-lg border border-[var(--border)] font-bold text-sm"
+          >
+            关闭
           </button>
         </div>
       </div>

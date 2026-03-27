@@ -7,12 +7,22 @@ const publicRoutes = [
   "/api/auth/login",
   "/api/auth/logout",
   "/api/auth/verify",
+  "/api/agent/inbox",
+  "/api/agent/dispatch",
+  "/lobster-army/api/task",
+  "/lobster-army/api/data",
+  "/lobster-army/api/execute",
 ];
 
 // 需要认证保护的路由（除了 publicRoutes 之外的所有路由）
 function isProtectedRoute(pathname: string): boolean {
   // API 路由中的 auth 相关不需要保护
   if (pathname.startsWith("/api/auth/")) {
+    return false;
+  }
+
+  // 检查是否是公开路由
+  if (publicRoutes.includes(pathname)) {
     return false;
   }
 

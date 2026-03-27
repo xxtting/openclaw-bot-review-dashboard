@@ -124,7 +124,18 @@ export async function PUT(request: NextRequest) {
     } else if (body.type === "legion") {
       const idx = data.legions.findIndex((l: any) => l.id === body.id);
       if (idx >= 0) {
-        data.legions[idx] = { ...data.legions[idx], ...body };
+        // 只更新 workflowSteps 字段，避免 type 等元数据污染
+        if (body.workflowSteps !== undefined && Array.isArray(body.workflowSteps)) {
+          const cleanedSteps = body.workflowSteps
+            .filter((s: any) => s && s.id && s.name && s.type)
+            .map((s: any) => ({
+              id: s.id,
+              name: s.name,
+              type: s.type,
+              assigneeId: s.assigneeId || undefined
+            }));
+          data.legions[idx].workflowSteps = cleanedSteps;
+        }
       }
     } else if (body.type === "agent") {
       const idx = data.agents.findIndex((a: any) => a.id === body.id);
