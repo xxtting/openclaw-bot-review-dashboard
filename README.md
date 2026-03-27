@@ -201,11 +201,12 @@ docker run -d \
 
 MIT License
 
-## 作者
+## 原作者
 
 **xmanrui** - 小红书：[主页](https://xhslink.com/m/AsJKWgEBt1I)  
 **微信**: xmanr123
-
+## 新作者
+  **星星**
 ## 致谢
 
 - [OpenClaw](https://github.com/openclaw/openclaw) - 强大的 AI Agent 框架
