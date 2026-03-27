@@ -1,5 +1,6 @@
 import os from "os";
 import path from "path";
+import { execSync } from "child_process";
 
 const home = os.homedir();
 
@@ -12,13 +13,24 @@ function uniquePaths(paths: Array<string | undefined>): string[] {
   return Array.from(new Set(paths.filter((value): value is string => Boolean(value && value.trim()))));
 }
 
+function getNpmGlobalRoot(): string | undefined {
+  try {
+    return execSync("npm root -g", { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+  } catch {
+    return undefined;
+  }
+}
+
 export function getOpenclawPackageCandidates(version = process.version): string[] {
   const appData = process.env.APPDATA;
   const homebrewPrefix = process.env.HOMEBREW_PREFIX;
   const npmPrefix = process.env.npm_config_prefix || process.env.PREFIX;
+  const npmGlobalRoot = getNpmGlobalRoot();
 
   return uniquePaths([
     process.env.OPENCLAW_PACKAGE_DIR,
+    // npm global root (most reliable — always check first if available)
+    npmGlobalRoot ? path.join(npmGlobalRoot, "openclaw") : undefined,
     path.join(home, ".local", "lib", "node_modules", "openclaw"),
     npmPrefix ? path.join(npmPrefix, "node_modules", "openclaw") : undefined,
     path.join(home, ".nvm", "versions", "node", version, "lib", "node_modules", "openclaw"),

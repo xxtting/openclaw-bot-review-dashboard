@@ -119,10 +119,33 @@ export async function generateJWTToken(payload: Record<string, any>, expiresIn: 
     process.env.JWT_SECRET || "openclaw-jwt-secret-change-in-production"
   );
 
+  // 解析过期时间
+  let expTime: number;
+  if (expiresIn.endsWith('d')) {
+    // 天：7d -> 7 * 24 * 60 * 60
+    const days = parseInt(expiresIn.slice(0, -1));
+    expTime = Math.floor(Date.now() / 1000) + days * 24 * 60 * 60;
+  } else if (expiresIn.endsWith('h')) {
+    // 小时：24h -> 24 * 60 * 60
+    const hours = parseInt(expiresIn.slice(0, -1));
+    expTime = Math.floor(Date.now() / 1000) + hours * 60 * 60;
+  } else if (expiresIn.endsWith('m')) {
+    // 分钟：30m -> 30 * 60
+    const minutes = parseInt(expiresIn.slice(0, -1));
+    expTime = Math.floor(Date.now() / 1000) + minutes * 60;
+  } else if (expiresIn.endsWith('s')) {
+    // 秒：60s -> 60
+    const seconds = parseInt(expiresIn.slice(0, -1));
+    expTime = Math.floor(Date.now() / 1000) + seconds;
+  } else {
+    // 默认 7 天
+    expTime = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
+  }
+
   const jwt = await new SignJWT(payload)
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime(`now + ${expiresIn}`)
+    .setExpirationTime(expTime)
     .sign(secret);
 
   return jwt;

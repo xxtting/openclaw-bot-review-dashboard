@@ -41,7 +41,7 @@ export function GatewayStatus({ compact = false, className = "", hideIconOnMobil
 
   useEffect(() => {
     check();
-    const timer = setInterval(check, 10000);
+    const timer = setInterval(check, 30000);
     return () => clearInterval(timer);
   }, [check]);
 

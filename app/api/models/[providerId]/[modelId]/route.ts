@@ -78,7 +78,7 @@ export async function PUT(
   try {
     const { providerId, modelId } = await params;
     const body = await request.json();
-    const { modelName, contextWindow, maxTokens, reasoning, inputTypes } = body;
+    const { modelName, contextWindow, maxTokens, reasoning, inputTypes, provider: providerDisplayName, status, baseUrl } = body;
 
     // 读取当前配置
     const configPath = path.join(process.cwd(), "config.json");
@@ -95,16 +95,16 @@ export async function PUT(
     }
 
     // 查找 Provider 和模型
-    const provider = config.providers.find((p) => p.id === providerId);
+    const providerRecord = config.providers.find((p) => p.id === providerId);
 
-    if (!provider) {
+    if (!providerRecord) {
       return NextResponse.json(
         { error: "Provider 不存在" },
         { status: 404 }
       );
     }
 
-    const model = provider.models.find((m: any) => m.id === modelId);
+    const model = providerRecord.models.find((m: any) => m.id === modelId);
 
     if (!model) {
       return NextResponse.json(
@@ -119,6 +119,9 @@ export async function PUT(
     if (maxTokens !== undefined) model.maxTokens = maxTokens;
     if (reasoning !== undefined) model.reasoning = reasoning;
     if (inputTypes !== undefined) model.input = inputTypes;
+    if (providerDisplayName !== undefined) model.provider = providerDisplayName;
+    if (status !== undefined) model.status = status;
+    if (baseUrl !== undefined) providerRecord.api = baseUrl;
 
     // 保存配置
     await writeFile(configPath, JSON.stringify(config, null, 2));

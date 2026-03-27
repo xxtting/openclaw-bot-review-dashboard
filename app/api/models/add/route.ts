@@ -9,6 +9,8 @@ interface Model {
   maxTokens: number;
   reasoning: boolean;
   input: string[];
+  provider?: string;
+  status?: "online" | "offline";
 }
 
 interface Provider {
@@ -55,6 +57,9 @@ export async function POST(request: NextRequest) {
       maxTokens,
       reasoning,
       inputTypes,
+      provider,
+      status,
+      baseUrl,
     } = body;
 
     // 验证必填字段
@@ -82,13 +87,13 @@ export async function POST(request: NextRequest) {
     }
 
     // 查找或创建 Provider
-    let provider = config.providers.find((p) => p.id === providerId);
+    let providerRecord = config.providers.find((p) => p.id === providerId);
 
-    if (!provider) {
+    if (!providerRecord) {
       // 创建新的 Provider
-      provider = {
+      providerRecord = {
         id: providerId,
-        api: apiKey ? "https://api.openai.com/v1" : "",
+        api: baseUrl || (apiKey ? "https://api.openai.com/v1" : ""),
         accessMode: accessMode || "api_key",
         models: [],
         usedBy: [],
@@ -96,22 +101,25 @@ export async function POST(request: NextRequest) {
 
       // 如果提供了 API Key，添加到 Provider
       if (apiKey) {
-        provider.apiKey = encryptApiKey(apiKey);
+        providerRecord.apiKey = encryptApiKey(apiKey);
       }
 
-      config.providers.push(provider);
+      config.providers.push(providerRecord);
     } else {
       // 更新现有 Provider
       if (accessMode) {
-        provider.accessMode = accessMode;
+        providerRecord.accessMode = accessMode;
       }
       if (apiKey) {
-        provider.apiKey = encryptApiKey(apiKey);
+        providerRecord.apiKey = encryptApiKey(apiKey);
+      }
+      if (baseUrl) {
+        providerRecord.api = baseUrl;
       }
     }
 
     // 检查模型是否已存在
-    const existingModelIndex = provider.models.findIndex((m) => m.id === modelId);
+    const existingModelIndex = providerRecord.models.findIndex((m) => m.id === modelId);
 
     const newModel: Model = {
       id: modelId,
@@ -120,14 +128,16 @@ export async function POST(request: NextRequest) {
       maxTokens: maxTokens || 0,
       reasoning: reasoning || false,
       input: inputTypes || ["text"],
+      provider: provider || "",
+      status: status || "online",
     };
 
     if (existingModelIndex >= 0) {
       // 更新现有模型
-      provider.models[existingModelIndex] = newModel;
+      providerRecord.models[existingModelIndex] = newModel;
     } else {
       // 添加新模型
-      provider.models.push(newModel);
+      providerRecord.models.push(newModel);
     }
 
     // 保存配置
@@ -136,7 +146,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: "模型添加成功",
-      provider: provider.id,
+      provider: providerRecord.id,
       model: modelId,
     });
   } catch (error) {
