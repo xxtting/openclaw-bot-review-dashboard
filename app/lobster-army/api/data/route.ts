@@ -35,6 +35,11 @@ export async function POST(request: NextRequest) {
     const data = readData();
 
     if (body.type === "legion") {
+      const defaultSteps = [
+        { id: "step-1", name: "执行", type: "execute" },
+        { id: "step-2", name: "审核", type: "review" },
+        { id: "step-3", name: "存档", type: "archive" },
+      ];
       const legion = {
         id: `legion-${Date.now()}`,
         name: body.name || "新军团",
@@ -42,11 +47,7 @@ export async function POST(request: NextRequest) {
         leaderId: body.leaderId || "",
         memberIds: body.memberIds || [],
         status: "idle",
-        workflowSteps: body.workflowSteps || [
-          { id: "step-1", name: "执行", type: "execute" },
-          { id: "step-2", name: "审核", type: "review" },
-          { id: "step-3", name: "存档", type: "archive" },
-        ],
+        workflowSteps: body.workflowSteps || defaultSteps,
         color: body.color || "#00d4aa",
         createdAt: new Date().toISOString(),
       };
@@ -66,6 +67,14 @@ export async function POST(request: NextRequest) {
         createdAt: new Date().toISOString(),
       };
       data.agents.push(agent);
+
+      // Auto-add agent to legion's memberIds when legionId is set
+      if (agent.legionId) {
+        const legion = data.legions.find((l: any) => l.id === agent.legionId);
+        if (legion && !legion.memberIds.includes(agent.id)) {
+          legion.memberIds.push(agent.id);
+        }
+      }
     } else if (body.type === "project") {
       const project = {
         id: `project-${Date.now()}`,
@@ -85,6 +94,83 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "保存失败" }, { status: 500 });
     }
 
+    return NextResponse.json({ success: true });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const data = readData();
+
+    if (body.type === "legion_member") {
+      const { legionId, agentId, action } = body;
+      const legion = data.legions.find((l: any) => l.id === legionId);
+      if (!legion) return NextResponse.json({ error: "军团不存在" }, { status: 404 });
+
+      if (action === "add") {
+        if (!legion.memberIds.includes(agentId)) {
+          legion.memberIds.push(agentId);
+        }
+        const agent = data.agents.find((a: any) => a.id === agentId);
+        if (agent) agent.legionId = legionId;
+      } else if (action === "remove") {
+        legion.memberIds = legion.memberIds.filter((id: string) => id !== agentId);
+        const agent = data.agents.find((a: any) => a.id === agentId);
+        if (agent) agent.legionId = "";
+      }
+    } else if (body.type === "legion") {
+      const idx = data.legions.findIndex((l: any) => l.id === body.id);
+      if (idx >= 0) {
+        data.legions[idx] = { ...data.legions[idx], ...body };
+      }
+    } else if (body.type === "agent") {
+      const idx = data.agents.findIndex((a: any) => a.id === body.id);
+      if (idx >= 0) {
+        data.agents[idx] = { ...data.agents[idx], ...body };
+      }
+    }
+
+    if (!writeData(data)) {
+      return NextResponse.json({ error: "保存失败" }, { status: 500 });
+    }
+    return NextResponse.json({ success: true });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+    const type = searchParams.get("type");
+    const data = readData();
+
+    if (type === "legion") {
+      const idx = data.legions.findIndex((l: any) => l.id === id);
+      if (idx < 0) return NextResponse.json({ error: "军团不存在" }, { status: 404 });
+      data.legions.splice(idx, 1);
+      // 清空属于该军团的agents的legionId
+      data.agents.forEach((a: any) => {
+        if (a.legionId === id) a.legionId = "";
+      });
+    } else if (type === "agent") {
+      const idx = data.agents.findIndex((a: any) => a.id === id);
+      if (idx < 0) return NextResponse.json({ error: "成员不存在" }, { status: 404 });
+      data.agents.splice(idx, 1);
+      // 从所有军团的memberIds中移除
+      data.legions.forEach((l: any) => {
+        l.memberIds = l.memberIds.filter((mid: string) => mid !== id);
+        if (l.leaderId === id) l.leaderId = "";
+      });
+    }
+
+    if (!writeData(data)) {
+      return NextResponse.json({ error: "保存失败" }, { status: 500 });
+    }
     return NextResponse.json({ success: true });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

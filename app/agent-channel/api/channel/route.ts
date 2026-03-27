@@ -4,67 +4,20 @@ import path from "path";
 import { OPENCLAW_HOME } from "@/lib/openclaw-paths";
 
 const CHANNELS_FILE = path.join(OPENCLAW_HOME, "agent-channels.json");
+const LEGIONS_FILE = path.join(OPENCLAW_HOME, "lobster-legions.json");
 
 function readChannels(): any[] {
   try {
-    if (!fs.existsSync(CHANNELS_FILE)) {
-      // 初始化默认频道
-      return getDefaultChannels();
-    }
+    if (!fs.existsSync(CHANNELS_FILE)) return [];
     return JSON.parse(fs.readFileSync(CHANNELS_FILE, "utf-8"));
-  } catch { return getDefaultChannels(); }
+  } catch { return []; }
 }
 
-function getDefaultChannels() {
-  return [
-    {
-      id: "channel-broadcast",
-      name: "全局广播",
-      emoji: "🛡️",
-      description: "MAIN发布指令，所有Agent可见",
-      type: "broadcast",
-      members: [],
-      isPrivate: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      id: "channel-engineering",
-      name: "工程部",
-      emoji: "🏠",
-      description: "工程军团内部讨论",
-      type: "legion",
-      legionId: "legion-engineering",
-      members: [],
-      isPrivate: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      id: "channel-design",
-      name: "设计部",
-      emoji: "🎨",
-      description: "设计军团内部讨论",
-      type: "legion",
-      legionId: "legion-design",
-      members: [],
-      isPrivate: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      id: "channel-testing",
-      name: "测试部",
-      emoji: "🧪",
-      description: "测试军团内部讨论",
-      type: "legion",
-      legionId: "legion-testing",
-      members: [],
-      isPrivate: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-  ];
+function readLegions(): { legions: any[]; agents: any[]; projects: any[] } {
+  try {
+    if (!fs.existsSync(LEGIONS_FILE)) return { legions: [], agents: [], projects: [] };
+    return JSON.parse(fs.readFileSync(LEGIONS_FILE, "utf-8"));
+  } catch { return { legions: [], agents: [], projects: [] }; }
 }
 
 function writeChannels(channels: any[]): boolean {
@@ -77,7 +30,45 @@ function writeChannels(channels: any[]): boolean {
 }
 
 export async function GET() {
-  const channels = readChannels();
+  const savedChannels = readChannels();
+  const { legions } = readLegions();
+
+  // 固定广播频道
+  const broadcastChannel = savedChannels.find((c) => c.type === "broadcast") || {
+    id: "channel-broadcast",
+    name: "全局广播",
+    emoji: "🛡️",
+    description: "MAIN发布指令，所有Agent可见",
+    type: "broadcast",
+    members: [],
+    isPrivate: false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  // 动态生成军团频道（基于lobster-legions.json）
+  const legionChannels = legions.map((legion: any) => {
+    const existing = savedChannels.find((c) => c.legionId === legion.id);
+    return existing || {
+      id: `channel-legion-${legion.id}`,
+      name: `${legion.emoji} ${legion.name}`,
+      emoji: legion.emoji,
+      description: `${legion.name} 内部讨论频道`,
+      type: "legion",
+      legionId: legion.id,
+      members: [],
+      isPrivate: false,
+      createdAt: legion.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  });
+
+  // 保留非legion/broadcast的自定义频道
+  const customChannels = savedChannels.filter(
+    (c) => c.type !== "legion" && c.type !== "broadcast"
+  );
+
+  const channels = [broadcastChannel, ...legionChannels, ...customChannels];
   return NextResponse.json({ channels });
 }
 
@@ -106,6 +97,24 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({ success: true, channel });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const channelId = searchParams.get("id");
+    const channels = readChannels();
+    const filtered = channels.filter((c) => c.id !== channelId);
+    if (filtered.length === channels.length) {
+      return NextResponse.json({ error: "频道不存在" }, { status: 404 });
+    }
+    if (!writeChannels(filtered)) {
+      return NextResponse.json({ error: "删除失败" }, { status: 500 });
+    }
+    return NextResponse.json({ success: true });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
