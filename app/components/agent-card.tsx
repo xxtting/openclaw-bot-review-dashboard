@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useId } from "react";
 import { buildGatewayUrl } from "@/lib/gateway-url";
 import { getPlatformDisplayName } from "@/lib/platforms";
 
@@ -312,17 +312,17 @@ function MiniSparkline({ data, width = 120, height = 24, color: fixedColor }: { 
   });
   const line = pts.map((p) => `${p.x},${p.y}`).join(" ");
   const area = `${pts[0].x},${height} ${line} ${pts[pts.length - 1].x},${height}`;
-  const id = `spark-${Math.random().toString(36).slice(2, 8)}`;
+  const gradientId = useId();
   return (
     <span className="inline-flex items-center gap-1">
       <svg width={width} height={height} className="inline-block align-middle" aria-label={data.map(v => v ? formatMs(v) : "-").join(" → ")}>
         <defs>
-          <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={color} stopOpacity={0.3} />
             <stop offset="100%" stopColor={color} stopOpacity={0.02} />
           </linearGradient>
         </defs>
-        <polygon points={area} fill={`url(#${id})`} />
+        <polygon points={area} fill={`url(#${gradientId})`} />
         <polyline points={line} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
         {pts.filter((p) => p.v > 0).map((p, i) => (
           <circle key={i} cx={p.x} cy={p.y} r={2} fill={color} opacity={0.9} />

@@ -500,11 +500,11 @@ export function Sidebar() {
             />
             <aside className="absolute top-0 left-0 bottom-0 w-[276px] max-w-[86vw] border-r border-[var(--border)] bg-[var(--card)] shadow-2xl flex flex-col">
               <div className="h-14 px-3 border-b border-[var(--border)] flex items-center justify-between">
-                <div className="font-semibold text-sm">Navigation</div>
+                <div className="font-semibold text-sm">{t('nav.navigation')}</div>
                 <button
                   onClick={() => setMobileMenuOpen(false)}
                   className="w-8 h-8 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text)]"
-                  aria-label="Close menu"
+                  aria-label={t('common.close')}
                 >
                   ×
                 </button>
