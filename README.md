@@ -121,6 +121,9 @@
 ### 会话列表
 ![会话列表预览](docs/sessions-preview.png)
 
+### 军团系统
+![军团系统预览](docs/lobster-army-preview.png)
+
 ### 像素办公室
 ![像素办公室](docs/pixel-office.png)
 
