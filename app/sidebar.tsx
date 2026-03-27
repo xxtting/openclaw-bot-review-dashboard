@@ -11,7 +11,7 @@ const BUGS_ENABLED_KEY = "pixel-office-bugs-enabled";
 const BUGS_COUNT_KEY = "pixel-office-bugs-count";
 const BUGS_MAX = 400;
 
-type NavIconName = "agents" | "pixelOffice" | "models" | "sessions" | "stats" | "alerts" | "skills";
+type NavIconName = "agents" | "pixelOffice" | "models" | "sessions" | "stats" | "alerts" | "skills" | "lobster" | "channel";
 type PixelTone = "base" | "shade" | "light";
 type PixelRect = { x: number; y: number; w?: number; h?: number; tone?: PixelTone; opacity?: number };
 type PixelPalette = { base: string; shade: string; light: string };
@@ -181,6 +181,31 @@ function NavPixelIcon({ name, active }: { name: NavIconName; active: boolean }) 
 }
 
 function NavItemIcon({ name, active }: { name: NavIconName; active: boolean }) {
+  // 龙虾军团和Agent频道使用emoji图标
+  if (name === "lobster") {
+    return (
+      <span
+        className={`inline-flex h-8 w-8 items-center justify-center border transition-colors text-base ${
+          active ? "border-[var(--accent)]/45 bg-[var(--accent)]/14" : "border-[var(--border)] bg-[var(--bg)]/88"
+        }`}
+        style={{ borderRadius: 0 }}
+      >
+        🦞
+      </span>
+    );
+  }
+  if (name === "channel") {
+    return (
+      <span
+        className={`inline-flex h-8 w-8 items-center justify-center border transition-colors text-base ${
+          active ? "border-[var(--accent)]/45 bg-[var(--accent)]/14" : "border-[var(--border)] bg-[var(--bg)]/88"
+        }`}
+        style={{ borderRadius: 0 }}
+      >
+        🤖
+      </span>
+    );
+  }
   return (
     <span
       className={`inline-flex h-8 w-8 items-center justify-center border transition-colors ${
@@ -207,6 +232,8 @@ const NAV_ITEMS: { group: string; items: { href: string; icon: NavIconName; labe
       { href: "/", icon: "agents", labelKey: "nav.agents" },
       { href: "/pixel-office", icon: "pixelOffice", labelKey: "nav.pixelOffice" },
       { href: "/models", icon: "models", labelKey: "nav.models" },
+      { href: "/lobster-army", icon: "lobster", labelKey: "nav.lobsterArmy" },
+      { href: "/agent-channel", icon: "channel", labelKey: "nav.agentChannel" },
     ],
   },
   {
