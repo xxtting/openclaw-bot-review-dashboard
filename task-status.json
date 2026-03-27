@@ -1,0 +1,201 @@
+{
+  "project": "OpenClaw-bot-review 功能强化",
+  "startTime": "2026-03-27T18:30:00+08:00",
+  "lead": "dev-lead (凌霄)",
+  "repository": "https://github.com/xxtting/openclaw-bot-review-dashboard",
+  "workDirectory": "/root/.openclaw/workspace-dev-lead/openclaw-bot-review-dashboard",
+
+  "modules": {
+    "i18n": {
+      "name": "简体中文本地化",
+      "priority": "P0",
+      "status": "in-progress",
+      "progress": 60,
+      "description": "扫描硬编码英文文本，补充翻译key，验证100%中文界面",
+      "files": [
+        "app/page.tsx",
+        "app/models/page.tsx",
+        "app/sessions/page.tsx",
+        "app/skills/page.tsx",
+        "app/alerts/page.tsx",
+        "app/pixel-office/page.tsx",
+        "app/stats/page.tsx",
+        "app/sidebar.tsx",
+        "app/components/*"
+      ],
+      "assignees": ["frontend-dev", "fullstack-dev"]
+    },
+    "auth": {
+      "name": "登录认证功能",
+      "priority": "P0",
+      "status": "in-progress",
+      "progress": 50,
+      "description": "登录/登出页面、Session管理（JWT）、路由保护中间件",
+      "files": [
+        "app/login/page.tsx",
+        "app/api/auth/login/route.ts",
+        "app/api/auth/logout/route.ts",
+        "app/api/auth/session/route.ts",
+        "middleware.ts",
+        "lib/auth-session.ts"
+      ],
+      "assignees": ["backend-dev", "frontend-dev"],
+      "dependencies": ["architect-design"]
+    },
+    "add-model": {
+      "name": "模型添加功能",
+      "priority": "P1",
+      "status": "mostly-complete",
+      "progress": 85,
+      "description": "模型列表页增加添加模型按钮、表单和API",
+      "files": [
+        "app/models/page.tsx",
+        "app/api/models/add/route.ts",
+        "lib/models.ts"
+      ],
+      "assignees": ["fullstack-dev"]
+    },
+    "skill-store": {
+      "name": "技能商店",
+      "priority": "P1",
+      "status": "in-progress",
+      "progress": 20,
+      "description": "侧边栏增加入口、展示和安装技能",
+      "files": [
+        "app/skill-store/page.tsx",
+        "app/api/skills/store/list/route.ts",
+        "app/api/skills/store/detail/route.ts",
+        "app/api/skills/install/route.ts",
+        "app/api/skills/uninstall/route.ts"
+      ],
+      "assignees": ["frontend-dev", "backend-dev"]
+    }
+  },
+
+  "agents": {
+    "architect": {
+      "role": "架构师 云图",
+      "status": "pending",
+      "taskFile": "assignments/architect.md",
+      "primaryTask": "登录认证架构设计",
+      "blockedBy": [],
+      "blocks": ["backend-dev", "frontend-dev"]
+    },
+    "frontend-dev": {
+      "role": "前端工程师 星轨",
+      "status": "pending",
+      "taskFile": "assignments/frontend-dev.md",
+      "primaryTask": "简体中文本地化",
+      "blockedBy": [],
+      "blocks": ["qa-engineer"]
+    },
+    "backend-dev": {
+      "role": "后端工程师 核芯",
+      "status": "pending",
+      "taskFile": "assignments/backend-dev.md",
+      "primaryTask": "登录认证API、技能商店API",
+      "blockedBy": ["architect"],
+      "blocks": ["qa-engineer"]
+    },
+    "fullstack-dev": {
+      "role": "全栈工程师 翼展",
+      "status": "pending",
+      "taskFile": "assignments/fullstack-dev.md",
+      "primaryTask": "模型添加功能（端到端）",
+      "blockedBy": [],
+      "blocks": ["qa-engineer"]
+    },
+    "qa-engineer": {
+      "role": "测试工程师 探微",
+      "status": "waiting",
+      "taskFile": "assignments/qa-engineer.md",
+      "primaryTask": "功能测试、集成测试",
+      "blockedBy": ["architect", "frontend-dev", "backend-dev", "fullstack-dev"],
+      "blocks": []
+    }
+  },
+
+  "currentPhase": "phase-1",
+  "phases": {
+    "phase-1": {
+      "name": "架构设计 + 本地化",
+      "agents": ["architect", "frontend-dev", "fullstack-dev"],
+      "description": "架构师完成架构设计，前端开始本地化，全栈完善模型添加功能"
+    },
+    "phase-2": {
+      "name": "后端开发",
+      "agents": ["backend-dev"],
+      "description": "后端工程师实现登录认证和技能商店API",
+      "dependsOn": "phase-1"
+    },
+    "phase-3": {
+      "name": "测试验收",
+      "agents": ["qa-engineer"],
+      "description": "测试工程师进行全面测试",
+      "dependsOn": "phase-2"
+    }
+  },
+
+  "overallProgress": {
+    "completed": 0,
+    "total": 4,
+    "percentage": 30
+  },
+
+  "nextSteps": [
+    "启动 architect 完成架构设计",
+    "启动 frontend-dev 开始本地化",
+    "启动 fullstack-dev 完善模型添加功能"
+  ],
+
+  "git": {
+    "branch": "main",
+    "remotes": {
+      "origin": "https://github.com/xxtting/openclaw-bot-review-dashboard.git"
+    },
+    "currentChanges": [
+      "app/models/page.tsx",
+      "app/sidebar.tsx",
+      "app/stats/page.tsx",
+      "lib/i18n.tsx",
+      "package-lock.json",
+      "package.json",
+      "app/api/auth/",
+      "app/api/models/",
+      "app/api/skills/install/",
+      "app/api/skills/store/",
+      "app/api/skills/uninstall/",
+      "app/login/",
+      "app/skill-store/",
+      "lib/auth-session.ts",
+      "middleware.ts"
+    ]
+  },
+
+  "environment": {
+    "requiredEnvVars": [
+      "AUTH_SECRET",
+      "AUTH_URL"
+    ],
+    "optionalEnvVars": [
+      "GITHUB_TOKEN"
+    ]
+  },
+
+  "service": {
+    "running": true,
+    "port": 3000,
+    "localUrl": "http://localhost:3000",
+    "networkUrl": "http://10.7.0.14:3000",
+    "nextjsVersion": "16.1.6",
+    "startupTime": 1564,
+    "startedAt": "2026-03-27T19:28:00+08:00"
+  },
+
+  "warnings": [
+    "middleware file convention is deprecated. Consider using 'proxy' instead.",
+    "npm unknown global config '--init.module' will stop working in next major version."
+  ],
+
+  "lastUpdated": "2026-03-27T19:28:00+08:00"
+}

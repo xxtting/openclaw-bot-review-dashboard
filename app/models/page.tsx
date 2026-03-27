@@ -69,6 +69,93 @@ export default function ModelsPage() {
   const [error, setError] = useState<string | null>(null);
   const [testing, setTesting] = useState<Record<string, boolean>>({});
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
+  
+  // 添加模型相关状态
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addFormData, setAddFormData] = useState({
+    providerId: "",
+    modelId: "",
+    modelName: "",
+    apiKey: "",
+    accessMode: "api_key" as "api_key" | "auth",
+    contextWindow: 0,
+    maxTokens: 0,
+    reasoning: false,
+    inputTypes: [] as string[],
+  });
+  const [addFormLoading, setAddFormLoading] = useState(false);
+  const [addFormError, setAddFormError] = useState<string | null>(null);
+
+  // 添加模型表单处理
+  const handleAddModel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddFormLoading(true);
+    setAddFormError(null);
+
+    try {
+      const response = await fetch("/api/models/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(addFormData),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setAddFormError(result.error || t("models.addFailed"));
+        return;
+      }
+
+      // 刷新数据
+      const configResp = await fetch("/api/config").then((r) => r.json());
+      if (!configResp.error) {
+        setData(configResp);
+      }
+
+      // 关闭表单
+      setShowAddForm(false);
+      setAddFormData({
+        providerId: "",
+        modelId: "",
+        modelName: "",
+        apiKey: "",
+        accessMode: "api_key",
+        contextWindow: 0,
+        maxTokens: 0,
+        reasoning: false,
+        inputTypes: [],
+      });
+    } catch (err) {
+      setAddFormError(err instanceof Error ? err.message : t("models.addFailed"));
+    } finally {
+      setAddFormLoading(false);
+    }
+  };
+
+  // 删除模型
+  const handleDeleteModel = async (providerId: string, modelId: string) => {
+    if (!confirm(t("models.confirmDelete"))) return;
+
+    try {
+      const response = await fetch(`/api/models/${providerId}/${modelId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        alert(result.error || t("models.deleteFailed"));
+        return;
+      }
+
+      // 刷新数据
+      const configResp = await fetch("/api/config").then((r) => r.json());
+      if (!configResp.error) {
+        setData(configResp);
+      }
+    } catch (err) {
+      alert(t("models.deleteFailed"));
+    }
+  };
 
   const testModel = async (providerId: string, modelId: string) => {
     const key = `${providerId}/${modelId}`;
@@ -214,6 +301,12 @@ export default function ModelsPage() {
           >
             {Object.values(testing).some(Boolean) ? t("models.testingAll") : t("models.testAll")}
           </button>
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 transition"
+          >
+            + {t("models.addModel")}
+          </button>
           <Link
             href="/"
             className="px-4 py-2 rounded-lg bg-[var(--card)] border border-[var(--border)] text-sm font-medium hover:border-[var(--accent)] transition"
@@ -222,6 +315,139 @@ export default function ModelsPage() {
           </Link>
         </div>
       </div>
+
+      {/* 添加模型表单模态框 */}
+      {showAddForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto bg-[var(--card)] border border-[var(--border)] rounded-xl p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-bold">{t("models.addModel")}</h2>
+              <button
+                onClick={() => setShowAddForm(false)}
+                className="w-8 h-8 flex items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text-muted)] hover:text-[var(--text)]"
+              >
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={handleAddModel} className="space-y-4">
+              {addFormError && (
+                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+                  {addFormError}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium mb-1">{t("models.providerId")}</label>
+                <input
+                  type="text"
+                  value={addFormData.providerId}
+                  onChange={(e) => setAddFormData({ ...addFormData, providerId: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text)] focus:outline-none focus:border-[var(--accent)]"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">{t("models.modelId")}</label>
+                <input
+                  type="text"
+                  value={addFormData.modelId}
+                  onChange={(e) => setAddFormData({ ...addFormData, modelId: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text)] focus:outline-none focus:border-[var(--accent)]"
+                  placeholder="gpt-4o-mini"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">{t("models.modelName")}</label>
+                <input
+                  type="text"
+                  value={addFormData.modelName}
+                  onChange={(e) => setAddFormData({ ...addFormData, modelName: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text)] focus:outline-none focus:border-[var(--accent)]"
+                  placeholder="GPT-4o Mini"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">{t("models.apiKey")}</label>
+                <input
+                  type="password"
+                  value={addFormData.apiKey}
+                  onChange={(e) => setAddFormData({ ...addFormData, apiKey: e.target.value })}
+                  className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text)] focus:outline-none focus:border-[var(--accent)]"
+                  placeholder="sk-..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">{t("models.accessMode")}</label>
+                <select
+                  value={addFormData.accessMode}
+                  onChange={(e) => setAddFormData({ ...addFormData, accessMode: e.target.value as "api_key" | "auth" })}
+                  className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text)] focus:outline-none focus:border-[var(--accent)]"
+                >
+                  <option value="api_key">api_key</option>
+                  <option value="auth">auth</option>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">{t("models.contextWindow")}</label>
+                  <input
+                    type="number"
+                    value={addFormData.contextWindow}
+                    onChange={(e) => setAddFormData({ ...addFormData, contextWindow: parseInt(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text)] focus:outline-none focus:border-[var(--accent)]"
+                    placeholder="128000"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">{t("models.maxTokens")}</label>
+                  <input
+                    type="number"
+                    value={addFormData.maxTokens}
+                    onChange={(e) => setAddFormData({ ...addFormData, maxTokens: parseInt(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text)] focus:outline-none focus:border-[var(--accent)]"
+                    placeholder="4096"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="reasoning"
+                  checked={addFormData.reasoning}
+                  onChange={(e) => setAddFormData({ ...addFormData, reasoning: e.target.checked })}
+                  className="w-4 h-4 accent-[var(--accent)]"
+                />
+                <label htmlFor="reasoning" className="text-sm">{t("models.supportReasoning")}</label>
+              </div>
+
+              <div className="flex items-center gap-4 pt-4">
+                <button
+                  type="submit"
+                  disabled={addFormLoading}
+                  className="flex-1 px-4 py-2 rounded-lg bg-[var(--accent)] text-[var(--bg)] font-medium hover:opacity-90 disabled:opacity-50 disabled:cursor-wait transition"
+                >
+                  {addFormLoading ? t("models.saving") : t("common.save")}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAddForm(false)}
+                  className="flex-1 px-4 py-2 rounded-lg border border-[var(--border)] text-[var(--text)] hover:bg-[var(--bg)] transition"
+                >
+                  {t("common.cancel")}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* 主模型和 Fallback 模型 */}
       <div className="mb-6 p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] flex flex-wrap items-center gap-4">

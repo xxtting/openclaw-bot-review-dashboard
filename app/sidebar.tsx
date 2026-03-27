@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { usePathname } from "next/navigation";
 import { useI18n, LanguageSwitcher } from "@/lib/i18n";
 import { ThemeSwitcher } from "@/lib/theme";
@@ -220,11 +221,13 @@ const NAV_ITEMS: { group: string; items: { href: string; icon: NavIconName; labe
     group: "nav.config",
     items: [
       { href: "/skills", icon: "skills", labelKey: "nav.skills" },
+      { href: "/skill-store", icon: "skills", labelKey: "nav.skillStore" },
     ],
   },
 ];
 
 export function Sidebar() {
+  const router = useRouter();
   const pathname = usePathname();
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useState(false);
@@ -234,6 +237,20 @@ export function Sidebar() {
   const [experimentOpen, setExperimentOpen] = useState(false);
   const [bugsEnabled, setBugsEnabled] = useState(false);
   const [bugsCount, setBugsCount] = useState(5);
+  const [logoutLoading, setLogoutLoading] = useState(false);
+
+  const handleLogout = async () => {
+    setLogoutLoading(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      router.push("/login");
+      router.refresh();
+    } catch (err) {
+      console.error("Logout failed:", err);
+    } finally {
+      setLogoutLoading(false);
+    }
+  };
   const [logoCarry, setLogoCarry] = useState<{ active: boolean; dx: number; dy: number; angle: number; hidden: boolean }>({
     active: false,
     dx: 0,
@@ -448,7 +465,7 @@ export function Sidebar() {
             <button
               onClick={() => setMobileMenuOpen(true)}
               className="w-9 h-9 rounded-lg border border-[var(--border)] bg-[var(--bg)] text-[var(--text)] text-base"
-              aria-label="Open menu"
+              aria-label={t("nav.openMenu")}
             >
               ☰
             </button>
@@ -480,7 +497,7 @@ export function Sidebar() {
                 <div className="text-[10px] text-[var(--text-muted)] truncate">
                   {pathname === "/" && mobileAgentCount !== null
                     ? `${mobileAgentCount} ${t("home.agentCount")}`
-                    : mobileCurrent ? t(mobileCurrent.labelKey) : "BOT DASHBOARD"}
+                    : mobileCurrent ? t(mobileCurrent.labelKey) : t("nav.botDashboard")}
                 </div>
               </div>
             </Link>
@@ -587,6 +604,17 @@ export function Sidebar() {
                     )}
                   </div>
                 </div>
+                {/* 移动端登出按钮 */}
+                <div className="mt-4 pt-4 border-t border-[var(--border)]">
+                  <button
+                    onClick={handleLogout}
+                    disabled={logoutLoading}
+                    className="w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors text-red-400 hover:bg-red-500/10 disabled:opacity-50 disabled:cursor-wait"
+                  >
+                    <span className="text-base">🚪</span>
+                    <span>{logoutLoading ? "⏳" : t("auth.logout")}</span>
+                  </button>
+                </div>
               </nav>
             </aside>
           </div>
@@ -653,7 +681,7 @@ export function Sidebar() {
                   </span>
                   <div>
                     <div className="text-sm font-bold text-[var(--text)] tracking-wide">OPENCLAW</div>
-                    <div className="text-[10px] text-[var(--text-muted)] tracking-wider">BOT DASHBOARD</div>
+                    <div className="text-[10px] text-[var(--text-muted)] tracking-wider">{t("nav.botDashboard")}</div>
                   </div>
                 </Link>
                 <button
@@ -769,6 +797,24 @@ export function Sidebar() {
                 🧪
               </button>
             )}
+            {/* 登出按钮 */}
+            <div className="mt-4 pt-4 border-t border-[var(--border)]">
+              <button
+                onClick={handleLogout}
+                disabled={logoutLoading}
+                className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
+                  collapsed ? "justify-center" : ""
+                } ${
+                  logoutLoading
+                    ? "bg-gray-500/20 text-gray-400 cursor-wait"
+                    : "text-red-400 hover:bg-red-500/10"
+                }`}
+                title={collapsed ? t("auth.logout") : undefined}
+              >
+                <span className="text-base">🚪</span>
+                {!collapsed && <span>{logoutLoading ? "⏳" : t("auth.logout")}</span>}
+              </button>
+            </div>
           </div>
         </nav>
       </aside>

@@ -201,9 +201,18 @@ function StatsPageInner() {
   return <StatsDetail agentId={agentId} />;
 }
 
+function StatsPageLoading() {
+  const { t } = useI18n();
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <p className="text-[var(--text-muted)]">{t("common.loading")}</p>
+    </div>
+  );
+}
+
 export default function StatsPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><p className="text-[var(--text-muted)]">Loading...</p></div>}>
+    <Suspense fallback={<StatsPageLoading />}>
       <StatsPageInner />
     </Suspense>
   );
