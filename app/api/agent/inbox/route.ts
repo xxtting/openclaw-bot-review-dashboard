@@ -1,190 +1,241 @@
-import { NextRequest, NextResponse } from "next/server";
-import fs from "fs";
-import path from "path";
-import { OPENCLAW_HOME } from "@/lib/openclaw-paths";
+import { NextRequest, NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
+import { OPENCLAW_HOME } from '@/lib/openclaw-paths';
 
-const INBOX_FILE = path.join(OPENCLAW_HOME, "lobster-agent-inbox", "agent-inbox.json");
+const INBOX_FILE = path.join(OPENCLAW_HOME, 'lobster-agent-inbox', 'agent-inbox.json');
 
-interface TaskItem {
-  id: string;
-  taskId: string;
-  title: string;
-  legionId: string;
-  legionName: string;
-  priority: string;
-  status: string;
-  createdAt: string;
-  message: string;
-}
-
-interface AgentInbox {
-  inboxVersion: string;
-  lastUpdated: string;
-  agents: Record<string, {
-    pendingTasks: TaskItem[];
-    lastCheck: string;
-  }>;
-}
-
-function readInbox(): AgentInbox {
-  try {
-    if (!fs.existsSync(INBOX_FILE)) {
-      return {
-        inboxVersion: "1.0",
-        lastUpdated: new Date().toISOString(),
-        agents: {}
-      };
-    }
-    return JSON.parse(fs.readFileSync(INBOX_FILE, "utf-8"));
-  } catch {
-    return {
-      inboxVersion: "1.0",
-      lastUpdated: new Date().toISOString(),
-      agents: {}
-    };
+// 确保目录存在
+function ensureDir() {
+  const dir = path.dirname(INBOX_FILE);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
   }
 }
 
-function writeInbox(inbox: AgentInbox): boolean {
+// 读取收件箱数据
+function readInbox(): any {
   try {
-    const dir = path.dirname(INBOX_FILE);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(INBOX_FILE, JSON.stringify(inbox, null, 2));
+    ensureDir();
+    if (!fs.existsSync(INBOX_FILE)) {
+      return { agents: {} };
+    }
+    return JSON.parse(fs.readFileSync(INBOX_FILE, 'utf-8'));
+  } catch (e) {
+    console.error('[Agent Inbox] 读取失败:', e);
+    return { agents: {} };
+  }
+}
+
+// 写入收件箱数据
+function writeInbox(data: any): boolean {
+  try {
+    ensureDir();
+    fs.writeFileSync(INBOX_FILE, JSON.stringify(data, null, 2));
     return true;
-  } catch {
+  } catch (e) {
+    console.error('[Agent Inbox] 写入失败:', e);
     return false;
   }
 }
 
-// GET - Agent获取自己的待办任务
-export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const agentId = searchParams.get("agentId");
-
-    if (!agentId) {
-      return NextResponse.json({ error: "缺少agentId参数" }, { status: 400 });
-    }
-
-    const inbox = readInbox();
-    
-    // 确保该agent有记录
-    if (!inbox.agents[agentId]) {
-      inbox.agents[agentId] = {
-        pendingTasks: [],
-        lastCheck: new Date().toISOString()
-      };
-    }
-
-    // 更新最后检查时间
-    inbox.agents[agentId].lastCheck = new Date().toISOString();
-    writeInbox(inbox);
-
-    const pendingTasks = inbox.agents[agentId]?.pendingTasks || [];
-
-    return NextResponse.json({
-      success: true,
-      agentId,
-      pendingTasks,
-      count: pendingTasks.length,
-      lastCheck: inbox.agents[agentId].lastCheck
-    });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
-  }
-}
-
-// POST - 分发任务给Agent
+/**
+ * POST - 添加任务到Agent收件箱
+ */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { agentId, taskId, title, legionId, legionName, priority, message } = body;
+    const {
+      agentId,
+      taskId,
+      title,
+      legionId,
+      legionName,
+      priority,
+      message,
+      action // 'start', 'execute', 'feedback', 'restart'
+    } = body;
 
-    if (!agentId || !taskId) {
-      return NextResponse.json({ error: "缺少必要参数" }, { status: 400 });
+    if (!agentId) {
+      return NextResponse.json(
+        { error: 'agentId 不能为空' },
+        { status: 400 }
+      );
     }
 
     const inbox = readInbox();
 
-    // 确保该agent有记录
     if (!inbox.agents[agentId]) {
       inbox.agents[agentId] = {
+        agentId,
         pendingTasks: [],
         lastCheck: new Date().toISOString()
       };
     }
 
     // 检查任务是否已存在
-    const existingTask = inbox.agents[agentId].pendingTasks.find((t: TaskItem) => t.taskId === taskId);
-    if (existingTask) {
-      return NextResponse.json({ 
-        success: false, 
-        message: "任务已存在",
-        task: existingTask 
+    const exists = inbox.agents[agentId].pendingTasks.some((t: any) => t.taskId === taskId);
+    if (exists) {
+      return NextResponse.json({
+        success: true,
+        message: '任务已存在于收件箱'
       });
     }
 
-    // 添加新任务
-    const newTask: TaskItem = {
-      id: `inbox-${Date.now()}`,
+    // 添加任务
+    const taskEntry = {
+      id: `inbox-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       taskId,
-      title: title || "新任务",
-      legionId: legionId || "",
-      legionName: legionName || "",
-      priority: priority || "P1",
-      status: "pending",
-      createdAt: new Date().toISOString(),
-      message: message || ""
+      title,
+      legionId,
+      legionName,
+      priority: priority || 'P2',
+      status: 'pending',
+      action: action || 'start',
+      message: message || `📋 新任务：${title}`,
+      createdAt: new Date().toISOString()
     };
 
-    inbox.agents[agentId].pendingTasks.push(newTask);
-    inbox.lastUpdated = new Date().toISOString();
+    inbox.agents[agentId].pendingTasks.push(taskEntry);
+    inbox.agents[agentId].lastCheck = new Date().toISOString();
 
-    if (!writeInbox(inbox)) {
-      return NextResponse.json({ error: "保存失败" }, { status: 500 });
+    if (writeInbox(inbox)) {
+      console.log(`[Agent Inbox] 已添加任务到 ${agentId}: ${title}`);
+      return NextResponse.json({
+        success: true,
+        data: { task: taskEntry },
+        message: '任务已添加到收件箱'
+      });
+    } else {
+      return NextResponse.json(
+        { error: '保存失败' },
+        { status: 500 }
+      );
     }
-
-    return NextResponse.json({ 
-      success: true, 
-      message: `任务已发送给 ${agentId}`,
-      task: newTask 
-    });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    console.error('[Agent Inbox] 错误:', e);
+    return NextResponse.json(
+      { error: e.message || '操作失败' },
+      { status: 500 }
+    );
   }
 }
 
-// DELETE - Agent确认完成任务，从队列中移除
+/**
+ * GET - 获取Agent收件箱
+ */
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const agentId = searchParams.get('agentId');
+
+    const inbox = readInbox();
+
+    if (agentId) {
+      // 获取指定Agent的收件箱
+      const agentInbox = inbox.agents[agentId] || {
+        agentId,
+        pendingTasks: [],
+        lastCheck: null
+      };
+
+      return NextResponse.json({
+        success: true,
+        data: agentInbox
+      });
+    } else {
+      // 获取所有Agent的收件箱统计
+      const summary = {
+        totalAgents: Object.keys(inbox.agents).length,
+        totalPendingTasks: 0,
+        agents: []
+      };
+
+      for (const [aid, data] of Object.entries(inbox.agents)) {
+        const agentData = data as any;
+        summary.totalPendingTasks += agentData.pendingTasks?.length || 0;
+        summary.agents.push({
+          agentId: aid,
+          pendingTasks: agentData.pendingTasks?.length || 0,
+          lastCheck: agentData.lastCheck
+        });
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: summary
+      });
+    }
+  } catch (e: any) {
+    console.error('[Agent Inbox] 错误:', e);
+    return NextResponse.json(
+      { error: e.message || '获取失败' },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE - 清理Agent收件箱中的任务
+ */
 export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const agentId = searchParams.get("agentId");
-    const inboxTaskId = searchParams.get("inboxTaskId");
+    const agentId = searchParams.get('agentId');
+    const taskId = searchParams.get('taskId');
 
-    if (!agentId || !inboxTaskId) {
-      return NextResponse.json({ error: "缺少必要参数" }, { status: 400 });
+    if (!agentId) {
+      return NextResponse.json(
+        { error: 'agentId 不能为空' },
+        { status: 400 }
+      );
     }
 
     const inbox = readInbox();
 
     if (!inbox.agents[agentId]) {
-      return NextResponse.json({ error: "Agent不存在" }, { status: 404 });
+      return NextResponse.json(
+        { error: 'Agent不存在' },
+        { status: 404 }
+      );
     }
 
-    const taskIndex = inbox.agents[agentId].pendingTasks.findIndex((t: TaskItem) => t.id === inboxTaskId);
-    if (taskIndex === -1) {
-      return NextResponse.json({ error: "任务不存在" }, { status: 404 });
+    if (taskId) {
+      // 删除指定任务
+      const originalLength = inbox.agents[agentId].pendingTasks.length;
+      inbox.agents[agentId].pendingTasks = inbox.agents[agentId].pendingTasks.filter(
+        (t: any) => t.taskId !== taskId
+      );
+
+      if (writeInbox(inbox)) {
+        return NextResponse.json({
+          success: true,
+          message: '任务已删除',
+          removed: originalLength - inbox.agents[agentId].pendingTasks.length
+        });
+      }
+    } else {
+      // 清空整个收件箱
+      inbox.agents[agentId].pendingTasks = [];
+      inbox.agents[agentId].lastCheck = new Date().toISOString();
+
+      if (writeInbox(inbox)) {
+        return NextResponse.json({
+          success: true,
+          message: '收件箱已清空'
+        });
+      }
     }
 
-    inbox.agents[agentId].pendingTasks.splice(taskIndex, 1);
-    inbox.lastUpdated = new Date().toISOString();
-
-    if (!writeInbox(inbox)) {
-      return NextResponse.json({ error: "保存失败" }, { status: 500 });
-    }
-
-    return NextResponse.json({ success: true, message: "任务已确认" });
+    return NextResponse.json(
+      { error: '操作失败' },
+      { status: 500 }
+    );
   } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    console.error('[Agent Inbox] 错误:', e);
+    return NextResponse.json(
+      { error: e.message || '操作失败' },
+      { status: 500 }
+    );
   }
 }
