@@ -12,11 +12,14 @@ const publicRoutes = [
   "/api/agent/execute",
   "/api/agents/config",
   "/lobster-army/api/task",
+  "/lobster-army/api/task/create",
+  "/lobster-army/api/agent-status",
   "/lobster-army/api/data",
   "/lobster-army/api/execute",
   "/lobster-army/api/report",
   "/lobster-army/api/workflow/step",
   "/lobster-army/api/sre/patrol",
+  "/lobster-army",
 ];
 
 // 需要认证保护的路由（除了 publicRoutes 之外的所有路由）

@@ -124,7 +124,7 @@ export async function PUT(request: NextRequest) {
     } else if (body.type === "legion") {
       const idx = data.legions.findIndex((l: any) => l.id === body.id);
       if (idx >= 0) {
-        // 只更新 workflowSteps 字段，避免 type 等元数据污染
+        // 只更新 workflowSteps 字段
         if (body.workflowSteps !== undefined && Array.isArray(body.workflowSteps)) {
           const cleanedSteps = body.workflowSteps
             .filter((s: any) => s && s.id && s.name && s.type)
@@ -133,8 +133,8 @@ export async function PUT(request: NextRequest) {
               name: s.name,
               type: s.type,
               assigneeId: s.assigneeId || undefined,
-              conditionType: s.conditionType || "none",
-              failNext: s.conditionType === "fail" ? (s.failNext ?? null) : null
+              // 审核步骤：不通过时反馈给feedbackAgentId（默认给上一步执行者）
+              feedbackAgentId: s.feedbackAgentId || undefined
             }));
           data.legions[idx].workflowSteps = cleanedSteps;
         }

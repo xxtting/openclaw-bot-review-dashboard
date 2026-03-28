@@ -16,6 +16,7 @@ interface WorkflowStep {
   assigneeId?: string;
   conditionType?: "none" | "pass" | "fail";
   failNext?: number | null;
+  feedbackAgentId?: string; // 不通过时反馈给哪个Agent
 }
 
 interface Task {
@@ -232,6 +233,47 @@ function addToDispatchQueue(agentId: string, task: Task, action: string, result:
   } catch (e) {
     console.error("添加分发队列失败:", e);
     return false;
+  }
+}
+
+// 汇报给 MAIN（任务完成时调用）
+async function reportToMain(task: Task, legion: any, status: "done" | "failed", result: string, agentOutput?: string) {
+  try {
+    const completeAgentId = task.assigneeId || legion?.leaderId;
+    
+    // 写入本地汇报队列
+    const REPORT_QUEUE_FILE = path.join(OPENCLAW_HOME, "lobster-reports", "main-report-queue.json");
+    let data: any = { reports: [], lastId: 0 };
+    try {
+      if (fs.existsSync(REPORT_QUEUE_FILE)) {
+        data = JSON.parse(fs.readFileSync(REPORT_QUEUE_FILE, "utf-8"));
+      }
+    } catch {}
+
+    const reportEntry = {
+      id: ++data.lastId,
+      taskId: task.id,
+      legionId: task.legionId,
+      legionName: legion?.name || "",
+      taskTitle: task.title,
+      status,
+      result,
+      agentOutput: agentOutput || undefined,
+      fromAgent: completeAgentId || undefined,
+      createdAt: new Date().toISOString(),
+      sentToMain: false
+    };
+    data.reports.push(reportEntry);
+
+    const dir = path.dirname(REPORT_QUEUE_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(REPORT_QUEUE_FILE, JSON.stringify(data, null, 2));
+
+    console.log(`📝 任务汇报已记录: [${status}] ${task.title}`);
+    return { success: true };
+  } catch (e) {
+    console.error("汇报MAIN失败:", e);
+    return { success: false };
   }
 }
 
@@ -510,6 +552,9 @@ export async function POST(request: NextRequest) {
       const completeAgentId = task.assigneeId || legion?.leaderId;
       addTaskReport("task_completed", task, legion, completeAgentId || "system", "完成", "✅ 任务已完成");
 
+      // 🔥 汇报给 MAIN
+      reportToMain(task, legion, "done", `✅ 任务「${task.title}」已完成`, task.executionResult).catch(console.error);
+
       return NextResponse.json({
         success: true,
         message: "任务已完成",
@@ -540,6 +585,8 @@ export async function POST(request: NextRequest) {
       if (nextStepIdx >= steps.length) {
         task.status = "done";
         task.currentStep = steps.length;
+        // 🔥 任务全部完成，汇报MAIN
+        reportToMain(task, legion, "done", `✅ 任务「${task.title}」审核通过，全部步骤完成`).catch(console.error);
       } else {
         task.currentStep = nextStepIdx;
         task.status = "in_progress";
@@ -569,14 +616,15 @@ export async function POST(request: NextRequest) {
       });
 
     } else if (action === "reject") {
-      // 🔥 审核不通过 - 返回指定步骤重新执行
+      // 🔥 审核不通过 - 反馈给指定Agent修正
       const steps = task.workflowSteps || [];
       const currentStepIdx = task.currentStep ?? 0;
       const currentStep = steps[currentStepIdx];
-      let failNextIdx = currentStep?.failNext ?? null;
-      if (failNextIdx === null || failNextIdx === undefined) {
-        failNextIdx = currentStepIdx;
-      }
+      
+      const feedbackAgentId = currentStep?.feedbackAgentId || currentStep?.assigneeId;
+      const feedbackNote = currentStep?.feedbackAgentId 
+        ? `❌ 审核不通过，反馈给 ${feedbackAgentId} 修正`
+        : `❌ 审核不通过，返回步骤${currentStepIdx + 1}重新执行`;
 
       const log: ExecutionLog = {
         stepId: currentStep?.id || `step-${currentStepIdx + 1}`,
@@ -584,38 +632,70 @@ export async function POST(request: NextRequest) {
         stepType: currentStep?.type || "review",
         executedAt: new Date().toISOString(),
         result: "failed",
-        notes: `❌ 审核不通过: ${body.notes || "未通过"}，返回步骤${failNextIdx + 1}重新执行`
+        notes: `❌ 审核不通过: ${body.notes || "未通过"}，${feedbackNote}`
       };
 
       task.executionLog = task.executionLog || [];
       task.executionLog.push(log);
 
-      task.currentStep = failNextIdx;
-      task.status = "in_progress";
-      task.updatedAt = new Date().toISOString();
+      // 如果有feedbackAgentId，通知该Agent；否则留在当前步骤
+      if (currentStep?.feedbackAgentId) {
+        // 打回给指定Agent修正
+        task.currentStep = currentStepIdx; // 留在审核步骤
+        task.status = "in_progress";
+        
+        addToAgentInbox(feedbackAgentId, task, legion, "feedback", currentStep?.name || `步骤${currentStepIdx + 1}`);
+        addToDispatchQueue(feedbackAgentId, task, "reject", `❌ 审核不通过: ${body.notes || "未通过"}，请修正后重新提交`);
+        triggerOpenClawAgent(feedbackAgentId, task, `修正任务: ${currentStep?.name || ""}`).catch(console.error);
+        
+        tasks[taskIdx] = task;
+        if (!writeTasks(tasks)) {
+          return NextResponse.json({ error: "保存失败" }, { status: 500 });
+        }
+        
+        addTaskReport("step_feedback", task, legion, feedbackAgentId, currentStep?.name || "", feedbackNote);
+        
+        return NextResponse.json({
+          success: true,
+          message: feedbackNote,
+          task: tasks[taskIdx],
+          branchAction: "feedback",
+          feedbackTo: feedbackAgentId
+        });
+      } else {
+        // 没有指定反馈Agent，返回当前步骤重新执行
+        let failNextIdx = currentStep?.failNext ?? null;
+        if (failNextIdx === null || failNextIdx === undefined) {
+          failNextIdx = currentStepIdx;
+        }
 
-      const failStep = steps[failNextIdx];
-      const failAgentId = failStep?.assigneeId;
-      if (failAgentId) {
-        addToAgentInbox(failAgentId, task, legion, "restart", failStep?.name);
-        addToDispatchQueue(failAgentId, task, "reject", `步骤"${failStep?.name}"需要重新执行`);
-        triggerOpenClawAgent(failAgentId, task, failStep?.name).catch(console.error);
+        task.currentStep = failNextIdx;
+        task.status = "in_progress";
+        task.updatedAt = new Date().toISOString();
+
+        const failStep = steps[failNextIdx];
+        const failAgentId = failStep?.assigneeId;
+        if (failAgentId) {
+          addToAgentInbox(failAgentId, task, legion, "restart", failStep?.name);
+          addToDispatchQueue(failAgentId, task, "reject", `步骤"${failStep?.name}"需要重新执行`);
+          triggerOpenClawAgent(failAgentId, task, failStep?.name).catch(console.error);
+        }
+
+        tasks[taskIdx] = task;
+        if (!writeTasks(tasks)) {
+          return NextResponse.json({ error: "保存失败" }, { status: 500 });
+        }
+
+        addTaskReport("step_rejected", task, legion, currentStep?.assigneeId || "system", currentStep?.name, `❌ 审核不通过，返回步骤${failNextIdx + 1}重新执行`);
+
+        return NextResponse.json({
+          success: true,
+          message: `❌ 审核不通过，已返回步骤${failNextIdx + 1}重新执行`,
+          task: tasks[taskIdx],
+          branchAction: "rejected",
+          jumpToStep: failNextIdx
+        });
       }
-
-      tasks[taskIdx] = task;
-      if (!writeTasks(tasks)) {
-        return NextResponse.json({ error: "保存失败" }, { status: 500 });
-      }
-
-      addTaskReport("step_rejected", task, legion, currentStep?.assigneeId || "system", currentStep?.name, `❌ 审核不通过，返回步骤${failNextIdx + 1}重新执行`);
-
-      return NextResponse.json({
-        success: true,
-        message: `❌ 审核不通过，已返回步骤${failNextIdx + 1}重新执行`,
-        task: tasks[taskIdx],
-        branchAction: "rejected",
-        jumpToStep: failNextIdx
-      });
 
     } else if (action === "fail") {
       const targetStep = stepIndex !== undefined ? stepIndex : (task.currentStep ?? 0);
