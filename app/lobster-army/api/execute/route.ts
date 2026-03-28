@@ -527,6 +527,53 @@ export async function POST(request: NextRequest) {
           agentResult.success ? `🚀 任务已开始，Agent执行中` : `🚀 任务已开始`,
           agentResult.output
         );
+
+        // 🔥 核心修复：start 后自动推进到下一步
+        if (steps.length > 1) {
+          const nextStepIdx = 1;
+          const nextStep = steps[nextStepIdx];
+          const nextAgentId = nextStep?.assigneeId || agentId;
+          
+          // 标记当前步骤完成
+          task.currentStep = nextStepIdx;
+          task.status = "in_progress";
+          
+          const nextLog: ExecutionLog = {
+            stepId: steps[0]?.id || "step-1",
+            stepName: steps[0]?.name || "步骤1",
+            stepType: steps[0]?.type || "execute",
+            executedBy: agentId,
+            executedAt: new Date().toISOString(),
+            result: "success",
+            notes: "✅ 步骤完成，自动进入下一步"
+          };
+          task.executionLog.push(nextLog);
+          
+          // 记录下一步开始
+          if (task.executionLog) {
+            task.executionLog.push({
+              stepId: nextStep?.id || `step-${nextStepIdx + 1}`,
+              stepName: nextStep?.name || `步骤${nextStepIdx + 1}`,
+              stepType: nextStep?.type || "execute",
+              executedBy: nextAgentId,
+              executedAt: new Date().toISOString(),
+              result: "pending",
+              notes: `⏳ 自动启动 ${nextAgentId} 执行...`
+            });
+          }
+          
+          task.updatedAt = new Date().toISOString();
+          tasks[taskIdx] = task;
+          writeTasks(tasks);
+          
+          // 触发下一个 Agent
+          if (nextAgentId) {
+            addToAgentInbox(nextAgentId, task, legion, "start", nextStep?.name);
+            addToDispatchQueue(nextAgentId, task, "start", `步骤"${nextStep?.name}"已分配`);
+            // 异步触发，不等待
+            triggerOpenClawAgent(nextAgentId, task, nextStep?.name).catch(console.error);
+          }
+        }
       }
 
       return NextResponse.json({
