@@ -12,7 +12,7 @@ interface Legion {
   memberIds: string[];
   status: "idle" | "busy" | "completed";
   color: string;
-  workflowSteps?: { id: string; name: string; type: string; assigneeId?: string }[];
+  workflowSteps?: { id: string; name: string; type: string; assigneeId?: string; conditionType?: "none" | "pass" | "fail"; failNext?: number | null }[];
 }
 
 interface Agent {
@@ -39,7 +39,7 @@ interface Task {
   priority: "P0" | "P1" | "P2";
   createdAt: string;
   currentStep?: number;
-  workflowSteps?: { id: string; name: string; type: string; assigneeId?: string }[];
+  workflowSteps?: { id: string; name: string; type: string; assigneeId?: string; conditionType?: "none" | "pass" | "fail"; failNext?: number | null }[];
   executionLog?: { stepId: string; stepName: string; stepType: string; executedAt: string; result: string; notes?: string }[];
   startedAt?: string;
   completedAt?: string;
@@ -63,6 +63,7 @@ interface DispatchTask {
   priority: string;
   status: string;
   createdAt: string;
+  message?: string;
 }
 
 const STATUS_COLORS = {
@@ -107,6 +108,7 @@ function LegionPanel({
   onRemoveMember,
   onDeleteLegion,
   onEditWorkflow,
+  onDeleteTask,
 }: {
   legion: Legion;
   agents: Agent[];
@@ -117,6 +119,7 @@ function LegionPanel({
   onRemoveMember: (legionId: string, agentId: string) => void;
   onDeleteLegion: (legionId: string) => void;
   onEditWorkflow: (legion: Legion) => void;
+  onDeleteTask: (task: Task) => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const members = agents.filter((a) => legion.memberIds.includes(a.id));
@@ -238,7 +241,7 @@ function LegionPanel({
                 const priorityColor = task.priority === "P0" ? "#ef4444" : task.priority === "P1" ? "#f97316" : "#64748b";
                 return (
                   <div key={task.id} className="flex items-center gap-2 text-xs p-1.5 rounded bg-[var(--bg)]">
-                    <span className="font-bold" style={{ color: priorityColor }}>{task.priority}</span>
+                    <span className="font-bold" style={{color: priorityColor}}>{task.priority}</span>
                     <span className="flex-1 truncate text-[var(--text)]">{task.title}</span>
                     <span className={`text-[10px] px-1.5 py-0.5 rounded ${
                       task.status === "done" ? "bg-green-500/20 text-green-400" :
@@ -250,6 +253,13 @@ function LegionPanel({
                        task.status === "in_progress" ? "进行中" :
                        task.status === "review" ? "待审" : "待办"}
                     </span>
+                    <button
+                      onClick={() => onDeleteTask(task)}
+                      className="text-[var(--text-muted)] hover:text-red-400 transition cursor-pointer"
+                      title="删除任务"
+                    >
+                      🗑️
+                    </button>
                   </div>
                 );
               })}
@@ -395,7 +405,7 @@ export default function LobsterArmyPage() {
 
   const importFromConfig = async () => {
     try {
-      const resp = await fetch("/api/config");
+      const resp = await fetch("/api/agents/config");
       const data = await resp.json();
       if (data.agents && Array.isArray(data.agents)) {
         let imported = 0;
@@ -409,7 +419,7 @@ export default function LobsterArmyPage() {
                 type: "agent",
                 id: agent.id,
                 name: agent.name || agent.id,
-                emoji: agent.emoji || "🛡️",
+                emoji: agent.emoji || "🤖",
                 role: agent.role || "成员",
                 status: agent.status || "offline",
               }),
@@ -421,7 +431,7 @@ export default function LobsterArmyPage() {
           alert(`成功导入 ${imported} 个Agent`);
           loadData();
         } else {
-          alert("没有新的Agent需要导入");
+          alert("没有新的Agent需要导入，所有Agent已存在");
         }
       } else {
         alert("配置中未找到Agent信息");
@@ -560,6 +570,30 @@ export default function LobsterArmyPage() {
     }
   };
 
+  // 执行下一步骤 - 多Agent协作！
+  const executeNextStep = async (task: Task) => {
+    try {
+      const res = await fetch("/lobster-army/api/workflow/step", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          taskId: task.id,
+          stepIndex: (task.currentStep ?? 0) + 1
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(`${data.message}\n团队成员 ${data.workflowInfo?.currentAgent} 正在执行...`);
+        loadData();
+      } else {
+        alert(data.error || "执行失败");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("执行失败");
+    }
+  };
+
   // 标记失败
   const failTask = async (task: Task, notes: string) => {
     try {
@@ -582,6 +616,28 @@ export default function LobsterArmyPage() {
     } catch (e) {
       console.error(e);
       alert("操作失败");
+    }
+  };
+
+  // 删除任务
+  const deleteTask = async (task: Task) => {
+    if (!confirm(`确定要删除任务「${task.title}」吗？`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`/lobster-army/api/task?taskId=${task.id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (data.success) {
+        loadData();
+        alert("任务已删除");
+      } else {
+        alert(data.error || "删除失败");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("删除失败");
     }
   };
 
@@ -689,15 +745,6 @@ export default function LobsterArmyPage() {
             {stats.tasks}个任务 · {stats.doneTasks}已完成
           </span>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex-1 h-3 rounded-full bg-[var(--bg)] overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all duration-500"
-              style={{ width: `${stats.progress}%`, background: "var(--accent)" }}
-            />
-          </div>
-          <span className="text-sm font-bold text-[var(--accent)] w-12 text-right">{stats.progress}%</span>
-        </div>
         <div className="flex gap-4 mt-2 text-xs text-[var(--text-muted)]">
           <span>🏰 {stats.legions}军团</span>
           <span>🛡️ {stats.members}成员</span>
@@ -763,222 +810,279 @@ export default function LobsterArmyPage() {
         </div>
       )}
 
-      {/* 待发任务面板 */}
-      {showDispatchPanel && dispatchTasks.length > 0 && (
-        <div className="mb-6 rounded-xl border border-[var(--accent)] bg-[var(--card)] overflow-hidden">
-          <div className="px-4 py-3 border-b border-[var(--accent)]/30 bg-[var(--accent)]/10 flex items-center justify-between">
-            <h3 className="font-bold text-sm flex items-center gap-2">
-              📬 待发任务 <span className="px-2 py-0.5 rounded bg-[var(--accent)]/20 text-[var(--accent)] text-xs">{dispatchTasks.length}</span>
-            </h3>
+      {/* 任务看板 - 移到上方 */}
+      <div className="mb-6 rounded-xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
+        <div className="px-4 py-3 border-b border-[var(--border)] bg-[var(--bg)]">
+          <h3 className="font-bold text-sm">📋 任务看板</h3>
+        </div>
+
+        {/* 任务筛选 */}
+        <div className="flex gap-1 p-2 border-b border-[var(--border)] flex-wrap">
+          {(["all", "pending", "in_progress", "review", "done"] as const).map((f) => (
             <button
-              onClick={() => setShowDispatchPanel(false)}
-              className="text-[var(--text-muted)] text-xs hover:text-[var(--text)] cursor-pointer"
+              key={f}
+              onClick={() => setTaskFilter(f)}
+              className={`px-2 py-1 rounded text-xs font-medium transition cursor-pointer ${
+                taskFilter === f
+                  ? "bg-[var(--accent)] text-[var(--bg)]"
+                  : "text-[var(--text-muted)] hover:bg-[var(--bg)]"
+              }`}
             >
-              收起 ×
+              {f === "all" ? "全部" :
+               f === "pending" ? "待办" :
+               f === "in_progress" ? "进行中" :
+               f === "review" ? "待审" : "完成"}
+              <span className="ml-1 opacity-60">
+                ({f === "all" ? tasks.length :
+                 f === "pending" ? tasks.filter(t => t.status === "pending").length :
+                 f === "in_progress" ? tasks.filter(t => t.status === "in_progress").length :
+                 f === "review" ? tasks.filter(t => t.status === "review").length :
+                 tasks.filter(t => t.status === "done").length})
+              </span>
             </button>
-          </div>
-          <div className="p-4">
-            <div className="space-y-2">
-              {dispatchTasks.map((task) => (
-                <div key={task.id} className="flex items-center gap-3 p-3 rounded-lg border border-[var(--border)] bg-[var(--bg)]">
-                  <span className={`font-bold text-xs ${
-                    task.priority === "P0" ? "text-red-400" :
-                    task.priority === "P1" ? "text-orange-400" : "text-slate-400"
-                  }`}>
-                    {task.priority}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{task.title}</p>
-                    <p className="text-xs text-[var(--text-muted)] truncate">{task.legionName}</p>
-                  </div>
+          ))}
+        </div>
+
+        {/* 任务列表 - 团队协作视图 */}
+        <div className="p-2 space-y-3 max-h-[600px] overflow-y-auto">
+          {filteredTasks.map((task) => {
+            const legion = legions.find((l) => l.id === task.legionId);
+            const priorityColor = task.priority === "P0" ? "#ef4444" : task.priority === "P1" ? "#f97316" : "#64748b";
+            const workflowSteps = legion?.workflowSteps || [
+              { id: "step-1", name: "执行", type: "execute", assigneeId: "moxiang-planner" },
+              { id: "step-2", name: "审核", type: "review", assigneeId: "moxiang-writer" },
+              { id: "step-3", name: "存档", type: "archive", assigneeId: "moxiang-editor" },
+            ];
+            const currentStep = task.currentStep ?? 0;
+            const progress = task.status === "done" ? 100 : (currentStep / workflowSteps.length) * 100;
+            const isInProgress = task.status === "in_progress";
+            const currentAgent = agents.find(a => a.id === workflowSteps[currentStep]?.assigneeId);
+            const currentAgentName = currentAgent?.name || workflowSteps[currentStep]?.assigneeId || "待分配";
+
+            return (
+              <div key={task.id} className="p-4 rounded-lg border border-[var(--border)] bg-[var(--bg)] hover:border-[var(--accent)]/50 transition">
+                {/* 任务头部 */}
+                <div className="flex items-start gap-2 mb-3">
+                  <span className="font-bold text-xs shrink-0" style={{color: priorityColor}}>{task.priority}</span>
+                  <span className="text-sm font-medium flex-1">{task.title}</span>
                   <button
-                    onClick={() => {
-                      fetch("/api/agent/dispatch", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          taskId: task.taskId,
-                          priority: task.priority,
-                          message: task.message || task.title
-                        })
-                      }).then(res => res.json()).then(() => loadData());
-                    }}
-                    className="px-3 py-1.5 rounded-lg bg-[var(--accent)]/20 text-[var(--accent)] text-xs font-bold hover:bg-[var(--accent)]/30 transition cursor-pointer"
+                    onClick={() => deleteTask(task)}
+                    className="text-[var(--text-muted)] hover:text-red-400 transition cursor-pointer"
+                    title="删除任务"
                   >
-                    🚀 发送
+                    🗑️
                   </button>
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* 测试通知面板 */}
-      <div className="mb-6 rounded-xl border border-dashed border-[var(--border)] bg-[var(--card)] overflow-hidden">
-        <div className="px-4 py-3 border-b border-[var(--border)] bg-[var(--bg)] flex items-center justify-between">
-          <h3 className="font-bold text-sm">🧪 Agent通知测试</h3>
-          <p className="text-xs text-[var(--text-muted)]">向指定Agent发送测试通知</p>
-        </div>
-        <div className="p-4">
-          <div className="flex gap-3 items-start">
-            <select
-              value={testNotificationAgentId}
-              onChange={(e) => setTestNotificationAgentId(e.target.value)}
-              className="flex-1 px-3 py-2 rounded border border-[var(--border)] bg-[var(--bg)] text-sm"
-            >
-              <option value="">选择要测试的Agent...</option>
-              {agents.map((a) => (
-                <option key={a.id} value={a.id}>{a.emoji} {a.name} ({a.role})</option>
-              ))}
-            </select>
-            <input
-              value={notificationMessage}
-              onChange={(e) => setNotificationMessage(e.target.value)}
-              className="flex-2 px-3 py-2 rounded border border-[var(--border)] bg-[var(--bg)] text-sm"
-              placeholder="测试消息内容..."
-            />
-            <button
-              onClick={() => sendTestNotification(testNotificationAgentId, notificationMessage)}
-              className="px-4 py-2 rounded-lg bg-[var(--accent)]/20 text-[var(--accent)] text-sm font-bold hover:bg-[var(--accent)]/30 transition cursor-pointer whitespace-nowrap"
-            >
-              📤 发送测试通知
-            </button>
-          </div>
+                {/* 军团信息 */}
+                <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] mb-3">
+                  {legion && <span className="flex items-center gap-1">{legion.emoji} {legion.name}</span>}
+                  <span className="text-[var(--border)]">|</span>
+                  <span className={`flex items-center gap-1 ${
+                    task.status === "done" ? "text-green-400" :
+                    task.status === "in_progress" ? "text-yellow-400" :
+                    "text-slate-400"
+                  }`}>
+                    {task.status === "done" ? "✅ 已完成" :
+                     task.status === "in_progress" ? `🔄 ${currentAgentName} 执行中` :
+                     task.status === "review" ? "👀 待审核" : "⏳ 等待开始"}
+                  </span>
+                </div>
+
+                {/* 团队协作进度条 */}
+                <div className="mb-3">
+                  <div className="flex justify-between text-[10px] text-[var(--text-muted)] mb-1">
+                    <span>团队进度</span>
+                    <span>{task.status === "done" ? "100%" : `${Math.round(progress)}%`}</span>
+                  </div>
+                  <div className="h-2 bg-[var(--border)] rounded-full overflow-hidden">
+                    <div 
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{ 
+                        width: `${progress}%`,
+                        background: task.status === "done" 
+                          ? "linear-gradient(90deg, #22c55e, #4ade80)" 
+                          : "linear-gradient(90deg, #3b82f6, #60a5fa)"
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* 团队成员步骤状态 */}
+                <div className="flex items-center gap-1 overflow-x-auto pb-1">
+                  {workflowSteps.map((step: any, idx: number) => {
+                    const stepAgent = agents.find(a => a.id === step.assigneeId);
+                    const isCompleted = idx < currentStep;
+                    const isCurrent = idx === currentStep && task.status === "in_progress";
+                    const isPending = idx > currentStep;
+
+                    return (
+                      <div 
+                        key={step.id} 
+                        className={`flex flex-col items-center gap-1 px-2 py-1.5 rounded-lg min-w-[70px] ${
+                          isCompleted ? "bg-green-500/20 border border-green-500/30" :
+                          isCurrent ? "bg-blue-500/20 border border-blue-500/50" :
+                          "bg-[var(--card)] border border-[var(--border)]"
+                        }`}
+                        title={`${step.name}: ${stepAgent?.name || step.assigneeId || "待分配"}`}
+                      >
+                        <span className="text-base">
+                          {isCompleted ? "✅" : isCurrent ? "🔄" : "⏳"}
+                        </span>
+                        <span className={`text-[10px] font-medium ${
+                          isCompleted ? "text-green-400" :
+                          isCurrent ? "text-blue-400" :
+                          "text-[var(--text-muted)]"
+                        }`}>
+                          {stepAgent?.emoji || "👤"}{stepAgent?.name?.slice(0, 3) || step.assigneeId?.slice(0, 4) || "待"}
+                        </span>
+                        <span className="text-[8px] text-[var(--text-muted)] truncate max-w-[60px]">
+                          {step.name}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* 当前执行信息和操作按钮 */}
+                <div className="flex items-center justify-between mt-3 pt-3 border-t border-[var(--border)]">
+                  <div className="flex items-center gap-2">
+                    {isInProgress && currentAgent && (
+                      <div className="flex items-center gap-1 text-xs">
+                        <span>{currentAgent.emoji}</span>
+                        <span className="text-[var(--text-muted)]">负责: <span className="text-blue-400">{currentAgent.name}</span></span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {task.status === "pending" && (
+                      <button
+                        onClick={() => startTask(task)}
+                        className="text-[10px] px-3 py-1.5 rounded-lg bg-green-500/20 text-green-400 hover:bg-green-500/30 transition cursor-pointer font-medium"
+                      >
+                        🚀 启动团队
+                      </button>
+                    )}
+                    {task.status === "in_progress" && (
+                      <>
+                        <button
+                          onClick={() => executeNextStep(task)}
+                          className="text-[10px] px-3 py-1.5 rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition cursor-pointer font-medium"
+                        >
+                          ⚡ 下一步骤
+                        </button>
+                        <button
+                          onClick={() => completeTask(task)}
+                          className="text-[10px] px-3 py-1.5 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition cursor-pointer font-medium"
+                        >
+                          ✅ 完成全部
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {filteredTasks.length === 0 && (
+            <p className="text-center text-[var(--text-muted)] text-sm py-8">暂无任务</p>
+          )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* 军团面板 */}
-        <div className="lg:col-span-2 space-y-4">
-          {legions.length === 0 ? (
-            <div className="text-center py-16 border-2 border-dashed border-[var(--border)] rounded-xl">
-              <p className="text-4xl mb-4">🦞</p>
-              <p className="text-[var(--text-muted)]">还没有军团</p>
-              <button
-                onClick={() => setShowAddLegion(true)}
-                className="mt-4 px-4 py-2 rounded-lg bg-[var(--accent)] text-[var(--bg)] text-sm font-bold hover:opacity-90 cursor-pointer"
-              >
-                创建第一个军团
-              </button>
+      {/* Agent状态概览 - 移到上方 */}
+      <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] overflow-hidden p-4 mb-6">
+        <h3 className="font-bold text-sm mb-3">👥 Agent状态</h3>
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+          {agents.slice(0, 6).map((agent) => (
+            <div key={agent.id} className="flex items-center gap-2 p-2 rounded-lg bg-[var(--bg)]">
+              <span className="text-lg">{agent.emoji}</span>
+              <div className="min-w-0">
+                <p className="text-xs font-medium truncate">{agent.name}</p>
+                <p className={`text-[10px] ${
+                  agent.status === 'online' ? 'text-green-400' :
+                  agent.status === 'busy' ? 'text-yellow-400' : 'text-slate-400'
+                }`}>
+                  {agent.status === 'online' ? '在线' : agent.status === 'busy' ? '工作中' : '离线'}
+                </p>
+              </div>
             </div>
-          ) : (
-            legions.map((legion, idx) => (
-              <LegionPanel
-                key={legion.id}
-                legion={legion}
-                agents={agents}
-                tasks={tasks}
-                color={LEGION_COLORS[idx % LEGION_COLORS.length]}
-                onAgentClick={setSelectedAgent}
-                onAddMember={setAddMemberLegionId}
-                onRemoveMember={removeMemberFromLegion}
-                onDeleteLegion={deleteLegion}
-                onEditWorkflow={setWorkflowLegion}
-              />
-            ))
-          )}
+          ))}
         </div>
+      </div>
 
-        {/* 任务看板 */}
-        <div className="space-y-4">
-          <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-            <div className="px-4 py-3 border-b border-[var(--border)] bg-[var(--bg)]">
-              <h3 className="font-bold text-sm">📋 任务看板</h3>
-            </div>
-
-            {/* 任务筛选 */}
-            <div className="flex gap-1 p-2 border-b border-[var(--border)] flex-wrap">
-              {(["all", "pending", "in_progress", "review", "done"] as const).map((f) => (
-                <button
-                  key={f}
-                  onClick={() => setTaskFilter(f)}
-                  className={`px-2 py-1 rounded text-xs font-medium transition cursor-pointer ${
-                    taskFilter === f
-                      ? "bg-[var(--accent)] text-[var(--bg)]"
-                      : "text-[var(--text-muted)] hover:bg-[var(--bg)]"
-                  }`}
-                >
-                  {f === "all" ? "全部" :
-                   f === "pending" ? "待办" :
-                   f === "in_progress" ? "进行中" :
-                   f === "review" ? "待审" : "完成"}
-                </button>
-              ))}
-            </div>
-
-            {/* 任务列表 */}
-            <div className="p-2 space-y-2 max-h-[500px] overflow-y-auto">
-              {filteredTasks.map((task) => {
-                const legion = legions.find((l) => l.id === task.legionId);
-                const priorityColor = task.priority === "P0" ? "#ef4444" : task.priority === "P1" ? "#f97316" : "#64748b";
-                const workflowSteps = legion?.workflowSteps || [
-                  { id: "step-1", name: "执行", type: "execute" },
-                  { id: "step-2", name: "审核", type: "review" },
-                  { id: "step-3", name: "存档", type: "archive" },
-                ];
-                const currentStep = task.currentStep ?? 0;
-                const canExecute = task.status !== "done" && task.status !== "archived";
-                return (
-                  <div key={task.id} className="p-3 rounded-lg border border-[var(--border)] bg-[var(--bg)] hover:border-[var(--accent)]/50 transition">
-                    <div className="flex items-start gap-2 mb-1">
-                      <span className="font-bold text-xs shrink-0" style={{ color: priorityColor }}>{task.priority}</span>
-                      <span className="text-sm font-medium flex-1">{task.title}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-                      {legion && <span>{legion.emoji} {legion.name}</span>}
-                      {task.assigneeName && <span>→ {task.assigneeName}</span>}
-                    </div>
-                    <div className="flex items-center gap-2 mt-2 flex-wrap">
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                        task.status === "done" ? "bg-green-500/20 text-green-400" :
-                        task.status === "in_progress" ? "bg-yellow-500/20 text-yellow-400" :
-                        task.status === "review" ? "bg-blue-500/20 text-blue-400" :
-                        "bg-slate-500/20 text-slate-400"
-                      }`}>
-                        {task.status === "done" ? "✅ 完成" :
-                         task.status === "in_progress" ? "🔄 进行中" :
-                         task.status === "review" ? "👀 待审核" : "⏳ 待办"}
-                      </span>
-                      {task.status !== "done" && task.status !== "archived" && (
-                        <button
-                          onClick={() => setExecutingTask(task)}
-                          className="text-[10px] px-2 py-0.5 rounded bg-[var(--accent)]/20 text-[var(--accent)] hover:bg-[var(--accent)]/30 transition cursor-pointer font-medium"
-                        >
-                          ⚡ 执行
-                        </button>
-                      )}
-                      {task.status === "pending" && (
-                        <button
-                          onClick={() => startTask(task)}
-                          className="text-[10px] px-2 py-0.5 rounded bg-green-500/20 text-green-400 hover:bg-green-500/30 transition cursor-pointer font-medium"
-                        >
-                          🚀 开始
-                        </button>
-                      )}
-                      {task.status !== "done" && task.status !== "archived" && (
-                        <button
-                          onClick={() => completeTask(task)}
-                          className="text-[10px] px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition cursor-pointer font-medium"
-                        >
-                          ✅ 完成
-                        </button>
-                      )}
-                      {currentStep >= 0 && currentStep < workflowSteps.length && task.status === "in_progress" && (
-                        <span className="text-[10px] text-[var(--text-muted)]">
-                          步骤 {currentStep + 1}/{workflowSteps.length}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-              {filteredTasks.length === 0 && (
-                <p className="text-center text-[var(--text-muted)] text-sm py-8">暂无任务</p>
-              )}
-            </div>
+      {/* 🔔 SRE 巡检服务 */}
+      <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 overflow-hidden p-4 mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">👮</span>
+            <h3 className="font-bold text-sm">SRE 巡检服务</h3>
+            <span className="text-xs text-yellow-400 bg-yellow-500/20 px-2 py-0.5 rounded">自动触发等待中的任务</span>
           </div>
+          <button
+            onClick={async () => {
+              try {
+                const btn = document.activeElement as HTMLButtonElement;
+                btn.disabled = true;
+                btn.textContent = "🔄 巡检中...";
+                
+                const res = await fetch("/lobster-army/api/sre/patrol");
+                const data = await res.json();
+                
+                if (data.success) {
+                  alert(`✅ SRE巡检完成\n\n检查任务: ${data.checked}个\n触发执行: ${data.triggered}个\n跳过: ${data.skipped}个`);
+                } else {
+                  alert(`❌ 巡检失败: ${data.error}`);
+                }
+                
+                btn.disabled = false;
+                btn.textContent = "👮 SRE巡检";
+              } catch (e) {
+                console.error(e);
+                alert("巡检失败");
+              }
+            }}
+            className="px-4 py-2 rounded-lg bg-yellow-500/20 text-yellow-400 text-sm font-bold hover:bg-yellow-500/30 transition cursor-pointer"
+          >
+            👮 SRE巡检
+          </button>
         </div>
+        <p className="text-xs text-[var(--text-muted)]">
+          💡 SRE巡检会自动检查所有进行中的任务，如果某个步骤等待超过5分钟未执行，会自动触发对应Agent开始工作
+        </p>
+      </div>
+
+      {/* 团队架构 - 全宽 */}
+      <div className="space-y-4 mb-6">
+        <h2 className="font-bold text-lg">🏰 团队架构</h2>
+        {legions.length === 0 ? (
+          <div className="text-center py-12 border-2 border-dashed border-[var(--border)] rounded-xl">
+            <p className="text-3xl mb-3">🦞</p>
+            <p className="text-[var(--text-muted)]">还没有军团</p>
+            <button
+              onClick={() => setShowAddLegion(true)}
+              className="mt-3 px-4 py-2 rounded-lg bg-[var(--accent)] text-[var(--bg)] text-sm font-bold hover:opacity-90 cursor-pointer"
+            >
+              创建第一个军团
+            </button>
+          </div>
+        ) : (
+          legions.map((legion, idx) => (
+            <LegionPanel
+              key={legion.id}
+              legion={legion}
+              agents={agents}
+              tasks={tasks}
+              color={LEGION_COLORS[idx % LEGION_COLORS.length]}
+              onAgentClick={setSelectedAgent}
+              onAddMember={setAddMemberLegionId}
+              onRemoveMember={removeMemberFromLegion}
+              onDeleteLegion={deleteLegion}
+              onEditWorkflow={setWorkflowLegion}
+              onDeleteTask={deleteTask}
+            />
+          ))
+        )}
       </div>
 
       {/* Agent详情弹窗 */}
@@ -1306,6 +1410,7 @@ function LegionAddMemberModal({
 }
 
 
+// 拖拽式工作流编辑器 - 支持条件分支
 function LegionWorkflowModal({
   legion,
   agents,
@@ -1318,13 +1423,41 @@ function LegionWorkflowModal({
   onSave: (steps: any[]) => void;
 }) {
   const [steps, setSteps] = useState(
-    (legion.workflowSteps || []).map((s) => ({ ...s, assigneeId: s.assigneeId || "" }))
+    (legion.workflowSteps || []).map((s) => ({ 
+      ...s, 
+      assigneeId: s.assigneeId || "",
+      // 新增条件分支字段
+      conditionType: s.conditionType || "none", // none | pass | fail
+      failNext: s.failNext ?? null, // 失败时跳转的步骤索引
+    }))
   );
+  const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
 
-  const addStep = () => {
+  const STEP_TYPES = [
+    { value: "execute", icon: "⚡", label: "执行", color: "#3b82f6" },
+    { value: "review", icon: "👀", label: "审核", color: "#f59e0b" },
+    { value: "archive", icon: "📦", label: "存档", color: "#6b7280" },
+    { value: "deploy", icon: "🚀", label: "部署", color: "#10b981" },
+    { value: "test", icon: "🧪", label: "测试", color: "#8b5cf6" },
+  ];
+
+  const BRANCH_TYPES = [
+    { value: "none", icon: "➖", label: "普通步骤", color: "#6b7280" },
+    { value: "pass", icon: "✅", label: "通过→下一步", color: "#22c55e" },
+    { value: "fail", icon: "❌", label: "不通过→返回", color: "#ef4444" },
+  ];
+
+  const members = agents.filter((a) => legion.memberIds.includes(a.id) || a.id === legion.leaderId);
+  const uniqueMembers = members.reduce<Agent[]>((acc, curr) => {
+    if (!acc.find((a) => a.id === curr.id)) acc.push(curr);
+    return acc;
+  }, []);
+
+  const addStep = (type: string) => {
+    const stepType = STEP_TYPES.find(t => t.value === type) || STEP_TYPES[0];
     setSteps([
       ...steps,
-      { id: `step-${Date.now()}`, name: `步骤${steps.length + 1}`, type: "execute", assigneeId: "" },
+      { id: `step-${Date.now()}`, name: stepType.label, type, assigneeId: "", conditionType: "none", failNext: null },
     ]);
   };
 
@@ -1332,123 +1465,254 @@ function LegionWorkflowModal({
     setSteps(steps.filter((_, i) => i !== idx));
   };
 
-  const updateStep = (idx: number, field: string, value: string) => {
+  const updateStep = (idx: number, field: string, value: any) => {
     const updated = [...steps];
     updated[idx] = { ...updated[idx], [field]: value };
     setSteps(updated);
   };
 
-  const moveStep = (idx: number, dir: "up" | "down") => {
-    const newIdx = dir === "up" ? idx - 1 : idx + 1;
-    if (newIdx < 0 || newIdx >= steps.length) return;
-    const updated = [...steps];
-    [updated[idx], updated[newIdx]] = [updated[newIdx], updated[idx]];
-    setSteps(updated);
+  // 拖拽排序
+  const handleDragStart = (e: any, idx: number) => {
+    setDraggedIdx(idx);
+    e.dataTransfer.effectAllowed = "move";
   };
 
-  const STEP_TYPES = [
-    { value: "execute", label: "⚡ 执行" },
-    { value: "review", label: "👀 审核" },
-    { value: "archive", label: "📦 存档" },
-    { value: "deploy", label: "🚀 部署" },
-    { value: "test", label: "🧪 测试" },
-  ];
+  const handleDragOver = (e: any, idx: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  };
 
-  const members = agents.filter((a) => legion.memberIds.includes(a.id) || a.id === legion.leaderId);
-  // Deduplicate members (same agent can appear as both member and leader)
-  const uniqueMembers = members.reduce<Agent[]>((acc, curr) => {
-    if (!acc.find((a) => a.id === curr.id)) acc.push(curr);
-    return acc;
-  }, []);
+  const handleDrop = (e: any, dropIdx: number) => {
+    e.preventDefault();
+    if (draggedIdx === null || draggedIdx === dropIdx) return;
+    const newSteps = [...steps];
+    const [removed] = newSteps.splice(draggedIdx, 1);
+    newSteps.splice(dropIdx, 0, removed);
+    setSteps(newSteps);
+    setDraggedIdx(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIdx(null);
+  };
+
+  // 判断步骤是否被其他步骤引用为failNext
+  const isStepReferencedAsFailNext = (idx: number) => {
+    return steps.some(s => s.failNext === idx);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
       <div
-        className="w-full max-w-2xl bg-[var(--card)] border-2 border-[var(--border)] rounded-xl p-6 max-h-[85vh] flex flex-col"
+        className="w-full max-w-4xl bg-[var(--card)] border-2 border-[var(--border)] rounded-xl p-6 max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-bold text-lg">⚙️ 工作流设置 - {legion.emoji} {legion.name}</h3>
-          <button onClick={onClose} className="text-2xl text-[var(--text-muted)] hover:text-[var(--text)] cursor-pointer">×</button>
+          <div>
+            <h3 className="font-bold text-lg">🎨 工作流设计器 - {legion.emoji} {legion.name}</h3>
+            <p className="text-xs text-[var(--text-muted)] mt-1">🖱️ 拖拽排序 | 📝 点击编辑 | 🔀 支持条件分支（通过/不通过）</p>
+          </div>
+          <button onClick={onClose} className="text-2xl text-[var(--text-muted)] hover:text-[var(--text)]">×</button>
         </div>
 
-        {/* Column Headers */}
-        <div className="grid grid-cols-2 gap-4 mb-3">
-          <div className="flex items-center gap-2 px-1">
-            <span className="text-sm font-bold text-[var(--text)]">⌨️ 命令</span>
-            <span className="text-xs text-[var(--text-muted)]">定义每个步骤的命令</span>
-          </div>
-          <div className="flex items-center gap-2 px-1">
-            <span className="text-sm font-bold text-[var(--text)]">👥 负责人</span>
-            <span className="text-xs text-[var(--text-muted)]">指定该步骤的执行负责人</span>
+        {/* 添加步骤按钮 */}
+        <div className="mb-4 p-3 rounded-lg bg-[var(--bg)] border border-[var(--border)]">
+          <p className="text-xs text-[var(--text-muted)] mb-2">➕ 添加步骤：</p>
+          <div className="flex gap-2 flex-wrap">
+            {STEP_TYPES.map((st) => (
+              <button
+                key={st.value}
+                onClick={() => addStep(st.value)}
+                className="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] hover:border-[var(--accent)] transition cursor-pointer text-sm flex items-center gap-1"
+                style={{ borderLeftColor: st.color, borderLeftWidth: "3px" }}
+              >
+                <span>{st.icon}</span>
+                <span>{st.label}</span>
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Two-Column Step List */}
+        {/* 条件分支类型说明 */}
+        <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/30">
+          <p className="text-xs text-blue-400 mb-2">💡 条件分支说明：</p>
+          <div className="flex gap-4 text-xs">
+            <span>✅ <b>通过</b> → 继续执行下一步</span>
+            <span>❌ <b>不通过</b> → 跳转到指定的步骤重新执行</span>
+          </div>
+        </div>
+
+        {/* 工作流画布 */}
         <div className="flex-1 overflow-y-auto space-y-3 mb-4">
           {steps.length === 0 && (
-            <p className="text-sm text-[var(--text-muted)] text-center py-8">暂无步骤，点击下方添加</p>
-          )}
-          {steps.map((step: any, idx: number) => (
-            <div key={step.id} className="grid grid-cols-2 gap-4 items-start">
-              {/* Left: Command */}
-              <div className="flex flex-col gap-2 p-3 rounded-lg border border-[var(--border)] bg-[var(--bg)]">
-                <div className="flex items-center gap-1">
-                  <span className="text-[var(--text-muted)] text-xs font-bold w-5 text-center">{idx + 1}</span>
-                  <button onClick={() => moveStep(idx, "up")} disabled={idx === 0} className="text-xs text-[var(--text-muted)] hover:text-[var(--text)] disabled:opacity-30 cursor-pointer">↑</button>
-                  <button onClick={() => moveStep(idx, "down")} disabled={idx === steps.length - 1} className="text-xs text-[var(--text-muted)] hover:text-[var(--text)] disabled:opacity-30 cursor-pointer">↓</button>
-                  <button onClick={() => removeStep(idx)} className="text-red-400 hover:text-red-300 text-xs ml-auto cursor-pointer">×</button>
-                </div>
-                <input
-                  value={step.name}
-                  onChange={(e) => updateStep(idx, "name", e.target.value)}
-                  className="w-full px-2 py-1.5 rounded border border-[var(--border)] bg-[var(--card)] text-sm"
-                  placeholder="命令名称，如：代码审查"
-                />
-              </div>
-
-              {/* Right: Member Selection */}
-              <div className="flex flex-col gap-2 p-3 rounded-lg border border-[var(--border)] bg-[var(--bg)]">
-                <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider font-bold">分配给</p>
-                <select
-                  value={step.assigneeId || ""}
-                  onChange={(e) => updateStep(idx, "assigneeId", e.target.value)}
-                  className="w-full px-2 py-1.5 rounded border border-[var(--border)] bg-[var(--card)] text-sm"
-                >
-                  <option value="">未分配</option>
-                  {uniqueMembers.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.emoji} {a.name} {a.id === legion.leaderId ? "👑" : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <div className="text-center py-12 border-2 border-dashed border-[var(--border)] rounded-xl">
+              <p className="text-4xl mb-3">📋</p>
+              <p className="text-[var(--text-muted)]">还没有工作流步骤</p>
+              <p className="text-xs text-[var(--text-muted)] mt-1">点击上方按钮添加步骤</p>
             </div>
-          ))}
+          )}
+          
+          {steps.map((step: any, idx: number) => {
+            const stepType = STEP_TYPES.find(t => t.value === step.type) || STEP_TYPES[0];
+            const branchType = BRANCH_TYPES.find(t => t.value === step.conditionType) || BRANCH_TYPES[0];
+            const isDragging = draggedIdx === idx;
+            const assignedAgent = uniqueMembers.find(a => a.id === step.assigneeId);
+            const isReferenced = isStepReferencedAsFailNext(idx);
+
+            return (
+              <div
+                key={step.id}
+                className={`p-4 rounded-xl border-2 transition-all ${
+                  isDragging
+                    ? "border-[var(--accent)] opacity-50 bg-[var(--accent)]/10 scale-[0.98]"
+                    : isReferenced
+                    ? "border-orange-400 bg-orange-500/5"
+                    : "border-[var(--border)] bg-[var(--bg)] hover:border-[var(--accent)]/50"
+                }`}
+                style={{ borderLeftColor: stepType.color, borderLeftWidth: "4px" }}
+              >
+                {/* 步骤头部 */}
+                <div className="flex items-center gap-3 mb-3">
+                  {/* 拖拽把手 - 只有这个元素可以拖拽 */}
+                  <div
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, idx)}
+                    onDragOver={(e) => handleDragOver(e, idx)}
+                    onDrop={(e) => handleDrop(e, idx)}
+                    onDragEnd={handleDragEnd}
+                    className="text-[var(--text-muted)] cursor-grab active:cursor-grabbing text-lg select-none"
+                  >
+                    ⋮⋮
+                  </div>
+
+                  {/* 步骤序号 */}
+                  <div 
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-sm shrink-0"
+                    style={{ backgroundColor: stepType.color }}
+                  >
+                    {idx + 1}
+                  </div>
+
+                  {/* 步骤名称 */}
+                  <input
+                    value={step.name}
+                    onChange={(e) => updateStep(idx, "name", e.target.value)}
+                    className="flex-1 px-2 py-1 rounded border border-transparent bg-transparent hover:border-[var(--border)] focus:border-[var(--accent)] text-sm font-medium"
+                    placeholder="步骤名称..."
+                  />
+
+                  {/* 步骤类型 */}
+                  <select
+                    value={step.type}
+                    onChange={(e) => updateStep(idx, "type", e.target.value)}
+                    className="px-2 py-1 rounded border border-[var(--border)] bg-[var(--card)] text-xs"
+                  >
+                    {STEP_TYPES.map((st) => (
+                      <option key={st.value} value={st.value}>{st.icon} {st.label}</option>
+                    ))}
+                  </select>
+
+                  {/* 删除按钮 */}
+                  <button
+                    onClick={() => removeStep(idx)}
+                    className="px-2 py-1 rounded border border-red-500/50 text-red-400 hover:bg-red-500/10 transition cursor-pointer text-xs"
+                    title="删除步骤"
+                  >
+                    🗑️
+                  </button>
+                </div>
+
+                {/* 步骤详情 */}
+                <div className="flex items-center gap-3 pl-11">
+                  {/* 负责人 */}
+                  <select
+                    value={step.assigneeId || ""}
+                    onChange={(e) => updateStep(idx, "assigneeId", e.target.value)}
+                    className="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] text-xs"
+                  >
+                    <option value="">👤 选择Agent</option>
+                    {uniqueMembers.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.emoji} {a.name} {a.id === legion.leaderId ? "👑" : ""}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* 分支类型 */}
+                  <select
+                    value={step.conditionType || "none"}
+                    onChange={(e) => updateStep(idx, "conditionType", e.target.value)}
+                    className="px-3 py-1.5 rounded-lg border text-xs"
+                    style={{ 
+                      borderColor: branchType.color,
+                      color: branchType.color,
+                      backgroundColor: `${branchType.color}10`
+                    }}
+                  >
+                    {BRANCH_TYPES.map((bt) => (
+                      <option key={bt.value} value={bt.value}>{bt.icon} {bt.label}</option>
+                    ))}
+                  </select>
+
+                  {/* 不通过时跳转目标（当选择"不通过"时显示） */}
+                  {step.conditionType === "fail" && (
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-[var(--text-muted)]">↩️ 跳转到：</span>
+                        <select
+                          value={step.failNext !== undefined && step.failNext !== null ? step.failNext : ""}
+                          onChange={(e) => updateStep(idx, "failNext", e.target.value !== "" ? parseInt(e.target.value) : null)}
+                          className="px-3 py-1.5 rounded-lg border border-[var(--border)] bg-[var(--card)] text-xs flex-1"
+                        >
+                          <option value="">-- 选择步骤编号 --</option>
+                          {steps.map((s: any, sIdx: number) => (
+                            sIdx !== idx ? (
+                              <option key={sIdx} value={sIdx}>
+                                步骤{sIdx + 1}: {s.name || "未命名"}
+                              </option>
+                            ) : null
+                          ))}
+                        </select>
+                      </div>
+                      <p className="text-[10px] text-[var(--text-muted)]">
+                        💡 选择不通过时要返回的步骤编号（可以是之前的任何步骤）
+                      </p>
+                    </div>
+                  )}
+
+                  {/* 被引用提示 */}
+                  {isReferenced && (
+                    <span className="text-xs text-orange-400 bg-orange-500/20 px-2 py-1 rounded">
+                      ⚠️ 被其他步骤引用
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
-        {/* Add Step */}
-        <button
-          onClick={addStep}
-          className="w-full mb-4 px-4 py-2 rounded-lg border border-dashed border-[var(--border)] text-sm text-[var(--text-muted)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition cursor-pointer"
-        >
-          + 添加步骤
-        </button>
+        {/* 拖拽提示 */}
+        {steps.length > 1 && (
+          <div className="text-center mb-4">
+            <p className="text-xs text-[var(--text-muted)]">💡 拖拽把手可调整步骤顺序 | 🔀 审核类步骤可设置"通过/不通过"分支</p>
+          </div>
+        )}
 
         {/* Footer Buttons */}
-        <div className="flex gap-3">
+        <div className="flex gap-3 pt-4 border-t border-[var(--border)]">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg border border-[var(--border)] text-sm"
+          >
+            取消
+          </button>
           <button
             onClick={() => onSave(steps)}
             className="flex-1 px-4 py-2 rounded-lg bg-[var(--accent)] text-[var(--bg)] font-bold text-sm hover:opacity-90 cursor-pointer"
           >
-            保存
-          </button>
-          <button
-            onClick={onClose}
-            className="flex-1 px-4 py-2 rounded-lg border border-[var(--border)] font-bold text-sm"
-          >
-            取消
+            💾 保存工作流 ({steps.length}个步骤)
           </button>
         </div>
       </div>
@@ -1587,40 +1851,58 @@ function TaskExecuteModal({
         {/* Workflow Steps */}
         <div className="mb-4">
           <p className="text-sm font-bold mb-2">📋 工作流步骤</p>
-          <div className="space-y-2 max-h-[200px] overflow-y-auto">
+          <div className="space-y-2 max-h-[250px] overflow-y-auto">
             {workflowSteps.map((step: any, idx: number) => {
               const isCompleted = idx < currentStep;
               const isCurrent = idx === currentStep;
               const isPending = idx > currentStep;
+              const hasCondition = step.conditionType === "pass" || step.conditionType === "fail";
 
               return (
                 <div
                   key={step.id}
-                  className={`flex items-center gap-3 p-3 rounded-lg border transition ${
+                  className={`flex flex-col gap-2 p-3 rounded-lg border transition ${
                     isCompleted ? "border-green-500/30 bg-green-500/10" :
                     isCurrent ? "border-[var(--accent)] bg-[var(--accent)]/10" :
                     "border-[var(--border)] bg-[var(--bg)]"
                   }`}
                 >
-                  <span className="text-lg">
-                    {isCompleted ? "✅" : isCurrent ? STEP_ICONS[step.type] || "⚡" : "⏳"}
-                  </span>
-                  <div className="flex-1">
-                    <p className={`text-sm font-medium ${isPending ? "text-[var(--text-muted)]" : ""}`}>
-                      {idx + 1}. {step.name}
-                    </p>
-                    <p className="text-xs text-[var(--text-muted)]">
-                      {STEP_ICONS[step.type] || "⚡"} {step.type}
-                      {step.assigneeId && " · 已分配"}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <span className="text-lg">
+                      {isCompleted ? "✅" : isCurrent ? STEP_ICONS[step.type] || "⚡" : "⏳"}
+                    </span>
+                    <div className="flex-1">
+                      <p className={`text-sm font-medium ${isPending ? "text-[var(--text-muted)]" : ""}`}>
+                        {idx + 1}. {step.name}
+                      </p>
+                      <p className="text-xs text-[var(--text-muted)]">
+                        {STEP_ICONS[step.type] || "⚡"} {step.type}
+                        {step.assigneeId && ` · ${step.assigneeId}`}
+                      </p>
+                    </div>
+                    {hasCondition && (
+                      <span className={`px-2 py-0.5 rounded text-xs ${
+                        step.conditionType === "pass" 
+                          ? "bg-green-500/20 text-green-400" 
+                          : "bg-red-500/20 text-red-400"
+                      }`}>
+                        {step.conditionType === "pass" ? "✅ 通过→下一步" : "❌ 不通过→返回"}
+                      </span>
+                    )}
+                    {isCurrent && (
+                      <button
+                        onClick={() => onExecute(task, idx)}
+                        className="px-3 py-1.5 rounded-lg bg-[var(--accent)] text-[var(--bg)] text-xs font-bold hover:opacity-90 cursor-pointer"
+                      >
+                        执行
+                      </button>
+                    )}
                   </div>
-                  {isCurrent && (
-                    <button
-                      onClick={() => onExecute(task, idx)}
-                      className="px-3 py-1.5 rounded-lg bg-[var(--accent)] text-[var(--bg)] text-xs font-bold hover:opacity-90 cursor-pointer"
-                    >
-                      执行
-                    </button>
+                  {/* 分支跳转信息 */}
+                  {step.conditionType === "fail" && step.failNext !== null && step.failNext !== undefined && (
+                    <div className="flex items-center gap-2 pl-8 text-xs text-orange-400">
+                      <span>↩️ 不通过时跳转到：步骤{step.failNext + 1} ({workflowSteps[step.failNext]?.name || "未知"})</span>
+                    </div>
                   )}
                 </div>
               );
@@ -1682,7 +1964,60 @@ function TaskExecuteModal({
                 🚀 开始任务
               </button>
             )}
-            {task.status !== "done" && task.status !== "archived" && (
+            {/* 审核类步骤显示"通过"和"不通过"按钮 */}
+            {task.status === "in_progress" && workflowSteps[currentStep]?.type === "review" && (
+              <>
+                <button
+                  onClick={() => {
+                    // 调用 approve API
+                    fetch("/lobster-army/api/execute", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        taskId: task.id,
+                        action: "approve",
+                        notes: notes || "审核通过"
+                      }),
+                    }).then(res => res.json()).then(data => {
+                      if (data.success) {
+                        alert(data.message);
+                        onClose();
+                      }
+                    });
+                  }}
+                  className="px-4 py-2 rounded-lg bg-green-500 text-white text-sm font-bold hover:opacity-90 cursor-pointer"
+                >
+                  ✅ 通过
+                </button>
+                <button
+                  onClick={() => {
+                    if (!notes.trim()) {
+                      alert("请输入不通过的原因");
+                      return;
+                    }
+                    // 调用 reject API
+                    fetch("/lobster-army/api/execute", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        taskId: task.id,
+                        action: "reject",
+                        notes: notes || "审核不通过"
+                      }),
+                    }).then(res => res.json()).then(data => {
+                      if (data.success) {
+                        alert(data.message);
+                        onClose();
+                      }
+                    });
+                  }}
+                  className="px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-bold hover:opacity-90 cursor-pointer"
+                >
+                  ❌ 不通过
+                </button>
+              </>
+            )}
+            {task.status !== "done" && task.status !== "archived" && task.status !== "in_progress" && (
               <button
                 onClick={() => onComplete(task)}
                 className="px-4 py-2 rounded-lg bg-purple-500 text-white text-sm font-bold hover:opacity-90 cursor-pointer"

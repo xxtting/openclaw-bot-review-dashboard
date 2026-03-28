@@ -206,11 +206,16 @@ function handleStartExecution(tasks: Task[], taskIndex: number, task: Task, agen
   task.updatedAt = new Date().toISOString();
   
   if (!task.agentExecution) {
-    task.agentExecution = {};
+    task.agentExecution = {
+      agentId: agentId,
+      startedAt: new Date().toISOString(),
+      result: 'pending'
+    };
+  } else {
+    task.agentExecution.agentId = agentId;
+    task.agentExecution.startedAt = new Date().toISOString();
+    task.agentExecution.result = 'pending';
   }
-  task.agentExecution.agentId = agentId;
-  task.agentExecution.startedAt = new Date().toISOString();
-  task.agentExecution.result = 'pending';
 
   // 记录执行日志
   const log: ExecutionLog = {

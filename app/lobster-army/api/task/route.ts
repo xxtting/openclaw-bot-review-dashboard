@@ -95,3 +95,31 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const taskId = searchParams.get("taskId");
+
+    if (!taskId) {
+      return NextResponse.json({ error: "缺少任务ID" }, { status: 400 });
+    }
+
+    const tasks = readTasks();
+    const idx = tasks.findIndex((t: any) => t.id === taskId);
+
+    if (idx === -1) {
+      return NextResponse.json({ error: "任务不存在" }, { status: 404 });
+    }
+
+    const deletedTask = tasks.splice(idx, 1)[0];
+
+    if (!writeTasks(tasks)) {
+      return NextResponse.json({ error: "保存失败" }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, deletedTask });
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 });
+  }
+}

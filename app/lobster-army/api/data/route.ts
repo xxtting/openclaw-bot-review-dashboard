@@ -132,7 +132,9 @@ export async function PUT(request: NextRequest) {
               id: s.id,
               name: s.name,
               type: s.type,
-              assigneeId: s.assigneeId || undefined
+              assigneeId: s.assigneeId || undefined,
+              conditionType: s.conditionType || "none",
+              failNext: s.conditionType === "fail" ? (s.failNext ?? null) : null
             }));
           data.legions[idx].workflowSteps = cleanedSteps;
         }
