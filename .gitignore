@@ -6,3 +6,6 @@ next-env.d.ts
 .DS_Store
 /.openclaw
 /public/assets/pixel-office/*.mp3
+
+# Server logs
+logs/
