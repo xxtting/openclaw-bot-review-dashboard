@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useI18n } from "@/lib/i18n";
+import OutputReview from "./components/OutputReview";
 
 interface Legion {
   id: string;
@@ -292,6 +293,8 @@ export default function LobsterArmyPage() {
   const [taskLogs, setTaskLogs] = useState<Record<string, any>>({});
   const [dispatchTasks, setDispatchTasks] = useState<DispatchTask[]>([]);
   const [showDispatchPanel, setShowDispatchPanel] = useState(true);
+  const [showOutputReview, setShowOutputReview] = useState(false);
+  const [outputReviewTaskId, setOutputReviewTaskId] = useState<string | null>(null);
   const [testNotificationAgentId, setTestNotificationAgentId] = useState("");
   const [notificationMessage, setNotificationMessage] = useState("📋 测试通知：这是一个测试消息");
   const [stats, setStats] = useState<ProjectStats>({
@@ -972,6 +975,12 @@ export default function LobsterArmyPage() {
                           ⚡ 下一步骤
                         </button>
                         <button
+                          onClick={() => { setOutputReviewTaskId(task.id); setShowOutputReview(true); }}
+                          className="text-[10px] px-3 py-1.5 rounded-lg bg-orange-500/20 text-orange-400 hover:bg-orange-500/30 transition cursor-pointer font-medium"
+                        >
+                          🦞 产出
+                        </button>
+                        <button
                           onClick={() => completeTask(task)}
                           className="text-[10px] px-3 py-1.5 rounded-lg bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition cursor-pointer font-medium"
                         >
@@ -1190,6 +1199,13 @@ export default function LobsterArmyPage() {
           onExecute={(task, stepIndex) => executeTask(task, stepIndex)}
           onComplete={(task) => completeTask(task)}
           onFail={(task, notes) => failTask(task, notes)}
+        />
+      )}
+      {/* 产出审核面板 */}
+      {showOutputReview && outputReviewTaskId && (
+        <OutputReview
+          taskId={outputReviewTaskId}
+          onClose={() => { setShowOutputReview(false); setOutputReviewTaskId(null); }}
         />
       )}
     </main>

@@ -1,0 +1,28 @@
+# 龙虾军团 Agent Runner Daemon - systemd 服务文件
+# 安装位置: /etc/systemd/system/lobster-agent-runner.service
+# 安装后运行: sudo systemctl daemon-reload && sudo systemctl enable --now lobster-agent-runner
+
+[Unit]
+Description=OpenClaw Lobster Army Agent Runner Daemon
+After=network.target openclaw-gateway.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/.openclaw/workspace-dev-lead/openclaw-bot-review-dashboard
+Environment="NODE_ENV=production"
+Environment="OPENCLAW_HOME=/root/.openclaw"
+ExecStart=/root/.openclaw/workspace-dev-lead/openclaw-bot-review-dashboard/scripts/start-agent-runner.sh
+Restart=always
+RestartSec=10
+StandardOutput=append:/root/.openclaw/logs/lobster-agent-runner.log
+StandardError=append:/root/.openclaw/logs/lobster-agent-runner.log
+
+# 安全加固
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/root/.openclaw
+
+[Install]
+WantedBy=multi-user.target
